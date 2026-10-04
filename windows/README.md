@@ -1,176 +1,129 @@
-<div align="center">
+# Windows app: developer notes
 
-<img src="src-tauri/icons/128x128.png" width="96" alt="Coucou icon">
+This folder holds the Windows app of Coucou MOD (it also builds on Linux). The project
+overview, screenshots and install steps are in the [root README](../README.md); this file is
+about how the code is organised and how to work on it.
 
-# Coucou for Windows
-
-**Mochi doesn't get a notch on a PC — so it lives at the top of your screen instead.**
-
-Approve Claude Code permissions, watch your session work, drop a file, chat with Claude, keep an eye on your services — without leaving what you're doing.
-
-![Windows 10/11](https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows)
-![Tauri 2](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)
-![Rust](https://img.shields.io/badge/Rust-backend-000?logo=rust)
-![License: MIT](https://img.shields.io/badge/license-MIT-green)
-
-</div>
-
-<img src="screenshots/greeting.png" width="640" alt="Mochi waving hello at launch">
-
----
-
-## Install
-
-The downloadable installer is **temporarily unavailable**. Microsoft Defender
-wrongly flags the unsigned installer as malware (`Trojan:Win32/Wacatac.H!ml`, a
-machine-learning false positive). A report is under review at Microsoft, and the
-installer will be published again once it is cleared and code-signed.
-
-Until then, [build it yourself](#build-it-yourself): it takes a few minutes and
-installs for the current user only — no admin prompt.
-
-## Using it
-
-<img src="screenshots/compact.png" width="292" alt="The compact island, with the integration pills as mini Mochis">
-<img src="screenshots/overview.png" width="640" alt="The overview: the focused integration on the left, the other pills on the right">
-<img src="screenshots/approval.png" width="640" alt="A Claude Code permission request, with Deny and Allow">
-<img src="screenshots/chat.png" width="640" alt="Chatting with Claude from the island">
-<img src="screenshots/drop.png" width="640" alt="Mochi turned into a box, waiting for a file">
-
-| What you do | What happens |
-|---|---|
-| Move the mouse to the very top-centre of the screen | Mochi peeks out |
-| Click the small island | It opens |
-| Click Mochi | It gets annoyed. Three times in a row and it goes dizzy |
-| Rest the pointer on Mochi for two seconds | Hearts |
-| Drag a file onto the island | Mochi turns into a box, swallows it, then offers to answer questions about it |
-| `Esc` | Closes the island |
-| Tray icon | Open, Settings…, Pause, Quit |
-
-Everything else happens on its own: a Claude Code permission request opens the
-island with **Deny / Allow**, a finished session shows what it did, and
-your integrations sit in the coloured pills next to Mochi.
-
-## Claude Code
-
-<img src="screenshots/settings.png" width="562" alt="The settings window">
-
-Open **Settings… → Claude Code → Install hooks…**. You get the exact diff of what
-will change in `%USERPROFILE%\.claude\settings.json`, the path of the dated backup
-that will be taken, and nothing is written until you click. Your own hooks are
-never touched, and uninstalling removes only Coucou's entries.
-
-The relay is a tiny executable, `coucou-hook.exe`, copied to
-`%LOCALAPPDATA%\Coucou\bin\` at launch. It is given 300 ms to reach Coucou and
-exits cleanly if the app is closed, slow or crashed — **a Claude Code session is
-never blocked or slowed down by Coucou.** If nobody answers a permission request
-in time, Coucou stays quiet and Claude Code asks in the terminal as usual.
-
-It works from any terminal — Windows Terminal, PowerShell, VS Code, Git Bash.
-
-## Chat and keys
-
-**Settings… → Claude** takes your Anthropic API key; **Settings… → Gemini** takes
-a Google AI Studio key and chooses which of the two answers in the chat. Keys live
-in the **Windows Credential Manager**, never on disk and never in the interface —
-the island can only ask whether a key exists. Same for every integration key.
-
-The chat assistant can act, not only answer:
-
-| Runs straight away | Asks first (Allow / Deny card in the chat) |
-|---|---|
-| Coucou status, sound, island edge, pause, file picker, settings, integration dashboards, opening a link | Opening a folder or an app, listing a folder, reading a file, taking a screenshot (Windows only), running a PowerShell command (`sh` on Linux) |
-
-The card shows exactly what will run. An unanswered card counts as Deny after two
-minutes. The assistant cannot approve Claude Code's own permission requests.
-
-No telemetry. The only network requests Coucou makes are to the services you
-configure yourself.
-
-## Skins
-
-**Settings… → Character → Import skin…** adds a character from a `.zip` (or
-**Folder…**): a `manifest.json` plus PNG layers, no code. Coucou checks all of it
-and shows its name, author and chat persona before keeping it, in
-`%LOCALAPPDATA%\Coucou\skins\`. **Remove** deletes it. **Create…** opens the skin
-editor: drop your own pictures, drag the face points into place, pick what swings,
-add a face per mood and watch it live, then save or export a .zip. Format and a
-runnable example: [docs/SKINS.md](../docs/SKINS.md).
-
-## Build it yourself
-
-You need [Rust](https://rustup.rs), [Node 20+](https://nodejs.org), and the
-**MSVC build tools** (Visual Studio Build Tools with "Desktop development with
-C++"). WebView2 ships with Windows 10/11.
-
-```powershell
-cd windows
-npm install
-npm run tauri dev      # live-reloading development build
-npm run pack           # builds the installer and drops it in windows/release/
-```
-
-`npm run dev` alone serves the front end in an ordinary browser, which is enough
-to work on the island's looks. It also serves `dev/upload-preview.html`, which
-replays the whole file-drop choreography on a loop — the one part of the UI that
-otherwise needs a real drag from Explorer to see. Neither page ships in the app.
-
-`npm run pack` leaves two files in `windows/release/`, the same names the release
-workflow publishes:
+## How it fits together
 
 ```
-Coucou-Windows-X.Y.Z-setup.exe    the versioned installer
-Coucou-Windows-setup.exe          the same file under the rolling name
+Claude Code
+   |  hook event (JSON on stdin)
+   v
+coucou-hook.exe            hook/            tiny relay, 300 ms to deliver, never blocks
+   |  named pipe
+   v
+Rust backend               src-tauri/       window, pipe, settings, keys, chat, pollers
+   |  Tauri events and commands
+   v
+Island page                src/             TypeScript, no framework, Canvas 2D character
 ```
 
-Installing is optional — `target/release/coucou.exe` runs on its own. There is no
-window in the taskbar and no console: the island at the top of the screen and the
-Mochi in the notification area are the whole app, and Quit lives in its menu.
+- The island is one transparent, always-on-top window that never takes focus on its own.
+  Rust decides when the cursor is over the island and toggles click-through, so clicks outside
+  it reach the apps underneath.
+- Hook events arrive in `pipe.rs`, are forwarded to the page as a `hook` event, and are turned
+  into state by `src/island/hooks.ts`. Views only read `State` (`src/core/state.ts`) and
+  repaint when it notifies.
+- Permission requests are the one place the relay waits: it holds the pipe open until the
+  island answers, and falls back to Claude Code's own prompt if nobody does.
+- The chat assistant runs in `assistant.rs`: it streams the model's answer, runs the tools it
+  asks for, and asks the page for an Allow or Deny card before anything risky.
 
-The 28 sounds are the macOS app's own files; they are never duplicated in this
-folder. The path is declared once, in `SOUNDS_DIR` at the top of
-`vite.config.ts` — when they move to `shared/sounds/`, change that one line.
-
-The app icon and the tray icon are drawn in code, like Mochi itself:
-
-```powershell
-npm run icons          # regenerates src-tauri/icons from scripts/gen-icons.mjs
-```
-
-### Layout
+## Layout
 
 ```
 windows/
-  src/                 island front end (TypeScript, no framework)
-    mochi/             Mochi and the launch greeting, in Canvas 2D
-    island/            state machine, hooks, integrations
-    views/             every island view
-    settings/          the settings window
-  src-tauri/           Rust backend: window, named pipe, Claude API, pollers
-  hook/                coucou-hook.exe, the Claude Code relay
-  scripts/             icon generator
+  src/
+    core/         state, layout constants, bridge to Rust, keys, snippets, usage, sounds
+    island/       the window controller, open and close state machine, hook handling
+    views/        every island screen (home card, editor, chat, cockpit, upload, settings)
+    mochi/        the character engine, skin rig, skin bundle loader, greeting
+    skineditor/   the skin editor window
+    settings/     the settings window
+    upload/       the file-drop animation
+    highlight/    the click-through ring used by the guided help
+  src-tauri/src/
+    lib.rs        app wiring and every command the page can call
+    island.rs     window geometry and the cursor poll
+    pipe.rs       hook transport
+    hooks.rs      reading and writing Claude Code's settings.json
+    assistant.rs, claude.rs, gemini.rs     chat, tools, providers
+    skins.rs      validating, storing and serving imported skins
+    ide.rs        which editor the user works in
+    repo.rs, usage.rs, integrations.rs     what the Home cards read
+    platform/     everything that differs between Windows and Linux
+  hook/           coucou-hook, the relay
+  scripts/        icon generator, packaging, sample skin generator
+  dev/            a looping preview of the file-drop animation
 ```
 
-### Log
+## Working on it
 
-`%LOCALAPPDATA%\Coucou\coucou.log` — hook events, permission decisions, poller
-problems. It stays on your machine.
+Requirements are listed in the root README.
 
-## What's different from the Mac version
+```powershell
+npm install
+npm run tauri dev       # live-reloading app
+npm run dev             # the front end alone, in an ordinary browser
+npx tsc --noEmit        # type-check
+cargo test --lib        # run from src-tauri/
+npm run pack            # installer in release/
+```
 
-- No notch, so the island lives at the top centre of the screen and retracts into
-  the top edge instead of hiding in a notch.
-- Permission approval works from **any** terminal; the Mac build only listens to
-  VS Code sessions.
-- Not in this version: sending a file by email, dragging Mochi onto a window to
-  attach it as context, and jumping to a specific terminal window — "Open
-  terminal" opens the working folder in VS Code when `code` is on your `PATH`.
-- Cal.com shows the next bookings as a list rather than the Mac's calendar.
+`npm run dev` is enough for most visual work: the pages render in a browser, and calls to Rust
+are no-ops there. The settings window is `settings.html`, the skin editor `skin-editor.html`.
+
+The sounds are the macOS app's files and are never copied into this folder. Their path is
+declared once as `SOUNDS_DIR` at the top of `vite.config.ts`.
+
+Icons are generated in code:
+
+```powershell
+npm run icons           # rewrites src-tauri/icons from scripts/gen-icons.mjs
+```
+
+Sample skins can be generated without any image editor:
+
+```powershell
+node scripts/make-example-skin.mjs
+node skin-samples/make-claude-mascot.mjs
+```
+
+### Local skins
+
+Skins kept outside Git go in `src/mochi/local/`. They load only in development builds, and the
+build blanks that folder so nothing in it can reach a release. Imported skin bundles are the
+supported way to use a skin in a release build.
+
+## Conventions
+
+- No third-party runtime dependencies beyond Tauri, and none added lightly. Rust crates need a
+  reason.
+- Secrets go to the Windows Credential Manager, never to a file or into the page.
+- The relay must never block Claude Code. Anything on that path has a short timeout and exits
+  cleanly.
+- The user's Claude Code settings are never overwritten: dated backup, merge, show the diff,
+  write after a click.
+- Surfaces are separated by fill, tone and spacing, not by light borders. A nested rounded
+  shape takes its parent's radius minus the gap, so the corners stay concentric.
+- Text uses `var(--font)`, which is Inter, bundled with the app and never fetched.
+- A hidden island costs nothing: its animation loop and cursor poll are stopped.
+
+## Files on disk
+
+| Path | Contents |
+|---|---|
+| `%APPDATA%\Coucou\settings.json` | preferences, no secrets |
+| `%LOCALAPPDATA%\Coucou\coucou.log` | hook events, decisions, poller problems |
+| `%LOCALAPPDATA%\Coucou\skins\` | imported skins |
+| `%LOCALAPPDATA%\Coucou\inbox\` | copies of dropped files, removed after a week |
+| `%LOCALAPPDATA%\Coucou\bin\coucou-hook.exe` | the relay, copied at launch |
 
 ## Linux
 
-The same app builds for Linux: everything that differs lives in
-`src-tauri/src/platform/`, and the relay's transport in `hook/src/unix.rs`.
+The same code builds for Linux; what differs lives in `src-tauri/src/platform/` and
+`hook/src/unix.rs`.
 
 ```bash
 sudo apt install build-essential pkg-config \
@@ -178,26 +131,15 @@ sudo apt install build-essential pkg-config \
   librsvg2-dev libssl-dev libdbus-1-dev patchelf \
   gstreamer1.0-plugins-base gstreamer1.0-plugins-good
 npm install
-npm run tauri dev      # live-reloading development build
-npm run pack           # AppImage, .deb and .rpm in windows/release/
+npm run tauri dev
+npm run pack            # AppImage, .deb and .rpm in release/
 ```
 
-What changes on Linux:
-
-- **The island** is a gtk-layer-shell overlay anchored to the top edge, over any
-  top panel, on compositors that support it: COSMIC, KDE Plasma, Hyprland, Sway
-  and other wlroots compositors. GNOME has no layer-shell, so there the island
-  is a regular window. `COUCOU_LAYER_SHELL=0` forces that mode anywhere.
-- **Click-through** is the window's input region, kept equal to the island
-  shape, so the compositor sends every other click to what is underneath.
-- **Mochi's eyes** follow the pointer only while it is over the island: Wayland
-  gives no app the cursor position anywhere else.
-- **Claude Code hooks** go through `~/.local/share/coucou/bin/coucou-hook` and a
-  Unix socket at `$XDG_RUNTIME_DIR/coucou.sock`. Both ends check that the other
-  runs as the same user.
-- **Keys** live in the Secret Service (GNOME Keyring, KWallet).
-- **Files**: preferences in `~/.config/coucou/`, the log at
-  `~/.local/share/coucou/coucou.log`.
-- What the Windows build leaves out, this one does too: sending a file by
-  email, dragging Mochi onto a window, and jumping to a specific terminal
-  window — "Open terminal" opens the folder in VS Code.
+- On compositors with layer-shell (COSMIC, KDE Plasma, Hyprland, Sway) the island is an overlay
+  anchored to the top edge. GNOME has none, so it opens as a normal window. Set
+  `COUCOU_LAYER_SHELL=0` to force that anywhere.
+- Click-through is the window's input region, kept equal to the island's shape.
+- The hook relay talks over a Unix socket at `$XDG_RUNTIME_DIR/coucou.sock`, and both ends
+  check they run as the same user.
+- Keys live in the Secret Service (GNOME Keyring or KWallet).
+- Media control uses `playerctl` and `pactl`, and the assistant says so if they are missing.
