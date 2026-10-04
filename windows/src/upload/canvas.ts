@@ -1,7 +1,7 @@
 // The upload canvas — port of UploadCanvasView.swift.
 //
 // While the sequence engine is active this canvas draws the whole island body:
-// card, dashed drop frame, drop text, progress bar, the choose card, Mochi and
+// card, dashed drop frame, drop text, progress bar, Mochi and
 // the file being sucked in. The island's own Mochi is hidden for the duration,
 // exactly as on macOS, because this canvas draws its own.
 
@@ -57,45 +57,21 @@ function text(
   ctx.fillText(s, x, y);
 }
 
-export interface UploadCanvasActions {
-  /** Primary button — hand the file to the chat. */
-  ask(): void;
-  /** Secondary button. */
-  cancel(): void;
-}
-
 export class UploadCanvas {
-  /** Wrapper holding the canvas and the two invisible choose buttons. */
+  /** Wrapper holding the canvas. */
   readonly el: HTMLElement;
 
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D | null;
-  private overlay: HTMLElement;
   private sizedFor = 0;
 
-  constructor(actions: UploadCanvasActions) {
+  constructor() {
     this.canvas = document.createElement("canvas");
     this.canvas.id = "upload-canvas";
 
-    // Invisible hit areas at the reference button positions. The labels are
-    // painted on the canvas; these only catch the click.
-    const mk = (x: number, w: number, onclick: () => void) => {
-      const b = document.createElement("button");
-      b.className = "upload-hit";
-      b.style.left = `${x}px`;
-      b.style.top = "113px";
-      b.style.width = `${w}px`;
-      b.style.height = "26px";
-      b.addEventListener("click", onclick);
-      return b;
-    };
-    this.overlay = document.createElement("div");
-    this.overlay.id = "upload-overlay";
-    this.overlay.append(mk(114, 168, actions.ask), mk(290, 120, actions.cancel));
-
     this.el = document.createElement("div");
     this.el.id = "upload-layer";
-    this.el.append(this.canvas, this.overlay);
+    this.el.append(this.canvas);
 
     this.ctx = this.canvas.getContext("2d");
   }
@@ -116,9 +92,6 @@ export class UploadCanvas {
     ctx.clearRect(0, 0, USC.W, USC.ISL_H);
 
     this.drawScene(ctx, f, wallTime);
-
-    // The buttons only exist once the choose card has faded in.
-    this.overlay.style.display = f.chooseAlpha > 0.5 ? "block" : "none";
   }
 
   // ── Scene ─────────────────────────────────────────────────────────────────
@@ -163,7 +136,6 @@ export class UploadCanvas {
 
     if (f.zoneAlpha > 0 && f.textAlpha > 0) this.drawDropText(ctx, f);
     if (f.barAlpha > 0 || f.barReveal > 0) this.drawProgressBar(ctx, f);
-    if (f.chooseAlpha > 0) this.drawChoose(ctx, f);
 
     this.drawMochi(ctx, f);
     if (f.fileVisible) this.drawFile(ctx, f);
@@ -262,29 +234,6 @@ export class UploadCanvas {
       ctx.fill();
       ctx.restore();
     }
-    ctx.restore();
-  }
-
-  // ── Choose card ───────────────────────────────────────────────────────────
-
-  private drawChoose(ctx: CanvasRenderingContext2D, f: UploadFrame) {
-    ctx.save();
-    ctx.globalAlpha = f.chooseAlpha;
-    ctx.translate(0, (1 - f.chooseAlpha) * 4);
-
-    const name = State.droppedFile?.name ?? "file";
-    text(ctx, `${name} is ready.`, 114, 80, `600 14px ${FONT}`, "#F5F6F8");
-    text(ctx, "What do you want to do with it?", 114, 100, `400 12.5px ${FONT}`, "#9398A1");
-
-    ctx.fillStyle = "#F5F6F8";
-    rr(ctx, 114, 113, 168, 26, 13);
-    ctx.fill();
-    text(ctx, "Ask a question about it", 198, 126, `500 12.5px ${FONT}`, "#0B0C0E", "center");
-
-    ctx.fillStyle = "rgba(255,255,255,0.09)";
-    rr(ctx, 290, 113, 120, 26, 13);
-    ctx.fill();
-    text(ctx, "Cancel", 350, 126, `500 12.5px ${FONT}`, "#F1F2F4", "center");
     ctx.restore();
   }
 

@@ -1,9 +1,11 @@
-// Island window: placement on the chosen display, the two window sizes
-// (full panel / invisible wake strip), click-through and the cursor poll.
+// Island window: placement on the chosen display, show/hide, click-through and
+// the cursor poll.
 //
-// There is no notch on a PC, so the island is a black shape drawn at the top
-// centre of the main display inside a borderless, transparent, always-on-top
-// window that never takes focus.
+// There is no notch on a PC — no dead space for the island to rest in — so it has
+// no resting place at all. The window is hidden until something needs a human or
+// the user summons it, then springs from the top or bottom centre of the chosen
+// display (settings.position): a borderless, transparent, always-on-top window
+// that never takes focus.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -15,17 +17,18 @@ use tauri::{AppHandle, Emitter, Manager, Monitor, PhysicalPosition, PhysicalSize
 use crate::platform::{self, cursor_physical, left_button_down};
 
 /// Logical size of the full window — the largest island view, like the macOS panel.
-pub const PANEL_W: f64 = 720.0;
-pub const PANEL_H: f64 = 320.0;
-/// Logical size of the invisible strip that wakes the island when it is hidden.
-pub const STRIP_W: f64 = 240.0;
-pub const STRIP_H: f64 = 6.0;
+pub const PANEL_W: f64 = 900.0;
+pub const PANEL_H: f64 = 600.0;
 
 pub const WINDOW_LABEL: &str = "island";
 
 /// Margin around the island that still counts as "on the island", in logical px.
 /// Wider than the macOS 6 pt because a click must never be swallowed.
 const HIT_MARGIN: f64 = 14.0;
+/// While a button is held the island reaches a little further, so a file
+/// arriving at speed is caught, but no further: the rest of the panel stays
+/// see-through and a drop beside the island lands on whatever is below.
+const DRAG_MARGIN: f64 = 28.0;
 
 #[derive(Serialize, Clone)]
 pub struct CursorPayload {
@@ -57,7 +60,8 @@ pub struct IslandRect {
 pub struct PollGate {
     active: Mutex<bool>,
     cv: Condvar,
-    pub collapsed: AtomicBool,
+    /// The island window is on screen. Hidden means no window and no polling.
+    pub visible: AtomicBool,
     pub rect: Mutex<IslandRect>,
     /// Mirrors the window flag so we only call into the OS when it changes.
     ignoring: AtomicBool,
@@ -68,7 +72,7 @@ impl PollGate {
         Self {
             active: Mutex::new(false),
             cv: Condvar::new(),
-            collapsed: AtomicBool::new(true),
+            visible: AtomicBool::new(false),
             rect: Mutex::new(IslandRect::default()),
             ignoring: AtomicBool::new(false),
         }
@@ -148,20 +152,28 @@ pub fn screen_info(app: &AppHandle, pref: &str) -> ScreenInfo {
     }
 }
 
-/// Places and sizes the window. `collapsed` picks the wake strip instead of the panel.
-pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
+/// Places and sizes the window. `position` is the edge the island springs from,
+/// "top" or "bottom", always centred horizontally.
+pub fn apply_geometry(app: &AppHandle, pref: &str, position: &str) {
     let Some(win) = window(app) else { return };
     let Some(m) = target_monitor(app, pref) else { return };
 
     let scale = m.scale_factor();
     let mp = *m.position();
     let ms = *m.size();
+    // The work area excludes the taskbar, so a bottom-anchored island clears it
+    // instead of hiding behind it. The top anchor keeps using the monitor bounds
+    // so its placement is unchanged from earlier builds.
+    let wa = *m.work_area();
 
-    let (lw, lh) = if collapsed { (STRIP_W, STRIP_H) } else { (PANEL_W, PANEL_H) };
-    let pw = (lw * scale).round().max(1.0) as u32;
-    let ph = (lh * scale).round().max(1.0) as u32;
+    let pw = (PANEL_W * scale).round().max(1.0) as u32;
+    let ph = (PANEL_H * scale).round().max(1.0) as u32;
     let x = mp.x + (ms.width as i32 - pw as i32) / 2;
-    let y = mp.y;
+    let y = if position == "bottom" {
+        wa.position.y + wa.size.height as i32 - ph as i32
+    } else {
+        mp.y
+    };
 
     let _ = win.set_size(PhysicalSize::new(pw, ph));
     let _ = win.set_position(PhysicalPosition::new(x, y));
@@ -221,10 +233,6 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                 let Some((cx, cy)) = cursor_physical() else { continue };
                 let x = (cx - origin.x as f64) / scale;
                 let y = (cy - origin.y as f64) / scale;
-                let size = match win.inner_size() {
-                    Ok(s) => (s.width as f64 / scale, s.height as f64 / scale),
-                    Err(_) => (PANEL_W, PANEL_H),
-                };
                 if (x - last.0).abs() < 1.0 && (y - last.1).abs() < 1.0 {
                     continue;
                 }
@@ -245,8 +253,9 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                 // WindowFromPoint, so OLE finds no drop target and shows the "no
                 // drop" cursor. macOS has no such problem: AppKit delivers drags to
                 // registered destinations whatever ignoresMouseEvents says. So while
-                // a button is held anywhere over the panel, the whole panel takes
-                // the mouse, which also makes the drop zone as forgiving as the Mac's.
+                // a button is held, the island and a margin around it take the
+                // mouse. Only around it: the panel is mostly empty, and taking the
+                // whole of it would swallow files dropped beside the island.
                 // A press may be the start of a drag: make sure the drop target is
                 // ours before the file arrives.
                 let down = left_button_down();
@@ -254,13 +263,20 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                     let handle = app.clone();
                     let _ = app.run_on_main_thread(move || platform::unblock_webview_drops(&handle));
                 }
+                // A release anywhere ends any drag. One dropped elsewhere or
+                // cancelled sends the island no drop, so this is how the drop
+                // card knows to close.
+                if was_down && !down {
+                    let _ = win.emit("pointer-up", ());
+                }
                 was_down = down;
 
                 let dragging = down
-                    && x >= 0.0
-                    && x <= size.0
-                    && y >= 0.0
-                    && y <= size.1;
+                    && r.w > 0.0
+                    && x >= r.x - DRAG_MARGIN
+                    && x <= r.x + r.w + DRAG_MARGIN
+                    && y >= r.y - DRAG_MARGIN
+                    && y <= r.y + r.h + DRAG_MARGIN;
 
                 let accept = on_island || dragging;
                 if gate.ignoring.load(Ordering::Relaxed) == accept {
@@ -278,7 +294,7 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
 ///
 /// With the cursor poll (Windows) the window takes the mouse again and the next
 /// tick decides from the cursor. Without it (Linux) the input region is set to
-/// the island itself, or to the whole wake strip while collapsed.
+/// the island itself.
 pub fn refresh_click_through(app: &AppHandle, gate: &PollGate) {
     if platform::CURSOR_POLL {
         set_ignore_cursor(app, false);
@@ -286,22 +302,44 @@ pub fn refresh_click_through(app: &AppHandle, gate: &PollGate) {
         return;
     }
     let Some(win) = window(app) else { return };
-    let region = if gate.collapsed.load(Ordering::Relaxed) {
-        None
+    let r = *gate.rect.lock().unwrap();
+    let region = if r.w <= 0.0 {
+        // Nothing drawn yet: nothing takes the mouse.
+        Some((0.0, 0.0, 0.0, 0.0))
     } else {
-        let r = *gate.rect.lock().unwrap();
-        if r.w <= 0.0 {
-            // Nothing drawn yet: nothing takes the mouse.
-            Some((0.0, 0.0, 0.0, 0.0))
-        } else {
-            let x0 = (r.x - HIT_MARGIN).max(0.0);
-            let y0 = (r.y - HIT_MARGIN).max(0.0);
-            let x1 = r.x + r.w + HIT_MARGIN;
-            let y1 = r.y + r.h + HIT_MARGIN;
-            Some((x0, y0, x1 - x0, y1 - y0))
-        }
+        let x0 = (r.x - HIT_MARGIN).max(0.0);
+        let y0 = (r.y - HIT_MARGIN).max(0.0);
+        let x1 = r.x + r.w + HIT_MARGIN;
+        let y1 = r.y + r.h + HIT_MARGIN;
+        Some((x0, y0, x1 - x0, y1 - y0))
     };
     platform::set_input_region(&win, region);
+}
+
+/// Summons or dismisses the island window. Hidden means hidden: no window under
+/// the cursor (so the screen edge — an auto-hidden taskbar's reveal gesture
+/// included — belongs to the user again) and the cursor poll parked.
+pub fn set_visible(app: &AppHandle, gate: &PollGate, pref: &str, position: &str, visible: bool) {
+    let Some(win) = window(app) else { return };
+    if visible {
+        if gate.visible.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        // The display under the cursor, or the layout, may have changed while hidden.
+        apply_geometry(app, pref, position);
+        platform::show_without_focus(&win);
+        // Windows can drop the topmost flag across a hide/show: re-assert it after.
+        let _ = win.set_always_on_top(true);
+        refresh_click_through(app, gate);
+        gate.set_active(true);
+    } else {
+        if !gate.visible.swap(false, Ordering::Relaxed) {
+            return;
+        }
+        // Park the poll first, so nothing touches a window that is going away.
+        gate.set_active(false);
+        let _ = win.hide();
+    }
 }
 
 pub fn set_ignore_cursor(app: &AppHandle, ignore: bool) {

@@ -66,7 +66,9 @@ pub fn start(app: AppHandle) {
     spawn(app.clone(), "integration_vercel", 5, 30, poll_vercel);
     spawn(app.clone(), "integration_stripe", 6, 30, poll_stripe);
     spawn(app.clone(), "integration_resend", 6, 60, poll_resend);
-    spawn(app.clone(), "integration_github", 7, 300, poll_github);
+    // Every two minutes: the CI result on the session's branch is what the
+    // developer cockpit shows, and a few calls per poll is nowhere near the limit.
+    spawn(app.clone(), "integration_github", 7, 120, poll_github);
     spawn(app.clone(), "integration_calcom", 8, 300, poll_calcom);
     spawn(app, "integration_notion", 9, 300, poll_notion);
 }
@@ -315,12 +317,142 @@ async fn poll_github(app: AppHandle) {
         _ => 0,
     };
 
-    emit(&app, IntegrationUpdate {
-        id: "integration_github",
-        data: json!({ "totalRepos": public + private, "totalStars": stars }),
-        error: None,
-        event: None,
-    });
+    // The developer's view: what is waiting on them, and whether the branch the
+    // session is on passes CI. Best effort — the totals above never depend on it.
+    let dev = github_dev(&http, &token).await;
+
+    let mut data = json!({ "totalRepos": public + private, "totalStars": stars });
+    let mut event = None;
+    if let (Some(map), Some(extra)) = (data.as_object_mut(), dev.data.as_object()) {
+        map.extend(extra.clone());
+    }
+    if let Some((repo, branch, sha)) = dev.failing {
+        // One alert per failing commit, not one per poll.
+        if is_new("github_ci", &format!("{repo}@{branch}#{sha}")) {
+            event = Some(IntegrationEvent {
+                success: false,
+                label: "CI failed".into(),
+                detail: Some(format!("{repo} · {branch}")),
+            });
+        }
+    }
+
+    emit(&app, IntegrationUpdate { id: "integration_github", data, error: None, event });
+}
+
+struct GithubDev {
+    data: Value,
+    /// (repo, branch, commit) when the current branch's CI is failing.
+    failing: Option<(String, String, String)>,
+}
+
+/// Percent-encodes what would break a URL path; `/` stays (branches contain it).
+fn encode_ref(r: &str) -> String {
+    r.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'/' | b'~' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+async fn github_get(http: &reqwest::Client, token: &str, url: &str) -> Option<Value> {
+    let response = http
+        .get(url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "Coucou")
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    response.json().await.ok()
+}
+
+async fn github_dev(http: &reqwest::Client, token: &str) -> GithubDev {
+    let mut data = serde_json::Map::new();
+
+    // PRs waiting on me, and my own open PRs.
+    for (key, query) in [("prsToReview", "review-requested:@me"), ("myPrs", "author:@me")] {
+        let url = format!("https://api.github.com/search/issues?q=is:pr+is:open+{query}&per_page=1");
+        if let Some(v) = github_get(http, token, &url).await {
+            data.insert(key.into(), json!(v.get("total_count").and_then(Value::as_i64).unwrap_or(0)));
+            if key == "prsToReview" {
+                if let Some(first) = v.get("items").and_then(|i| i.get(0)) {
+                    data.insert(
+                        "reviewPr".into(),
+                        json!({
+                            "number": first.get("number"),
+                            "title": first.get("title"),
+                            "url": first.get("html_url"),
+                        }),
+                    );
+                }
+            }
+        }
+    }
+
+    // CI for the branch the session is on: Actions check runs plus classic statuses.
+    let mut failing = None;
+    if let Some((repo, branch)) = crate::repo::current() {
+        let base = format!("https://api.github.com/repos/{repo}/commits/{}", encode_ref(&branch));
+        let runs = github_get(http, token, &format!("{base}/check-runs?per_page=100")).await;
+        let status = github_get(http, token, &format!("{base}/status")).await;
+
+        let mut failed = false;
+        let mut pending = false;
+        let mut passed = false;
+        let mut sha = String::new();
+        if let Some(runs) = runs.as_ref().and_then(|r| r.get("check_runs")).and_then(Value::as_array) {
+            for run in runs {
+                if sha.is_empty() {
+                    sha = run.get("head_sha").and_then(Value::as_str).unwrap_or("").chars().take(7).collect();
+                }
+                if run.get("status").and_then(Value::as_str) != Some("completed") {
+                    pending = true;
+                } else {
+                    match run.get("conclusion").and_then(Value::as_str) {
+                        Some("failure" | "timed_out" | "cancelled" | "action_required") => failed = true,
+                        Some("success" | "neutral" | "skipped") => passed = true,
+                        _ => {}
+                    }
+                }
+            }
+        }
+        if let Some(st) = status.as_ref() {
+            if st.get("total_count").and_then(Value::as_i64).unwrap_or(0) > 0 {
+                match st.get("state").and_then(Value::as_str) {
+                    Some("failure" | "error") => failed = true,
+                    Some("pending") => pending = true,
+                    Some("success") => passed = true,
+                    _ => {}
+                }
+                if sha.is_empty() {
+                    sha = st.get("sha").and_then(Value::as_str).unwrap_or("").chars().take(7).collect();
+                }
+            }
+        }
+        let state = if failed {
+            "failure"
+        } else if pending {
+            "pending"
+        } else if passed {
+            "success"
+        } else {
+            "none"
+        };
+        data.insert("ci".into(), json!(state));
+        data.insert("ciRepo".into(), json!(repo));
+        data.insert("ciBranch".into(), json!(branch));
+        data.insert("ciUrl".into(), json!(format!("https://github.com/{repo}/actions")));
+        if failed {
+            failing = Some((repo, branch, sha));
+        }
+    }
+
+    GithubDev { data: Value::Object(data), failing }
 }
 
 // ── Vercel ────────────────────────────────────────────────────────────────────
@@ -761,5 +893,20 @@ fn fmt_value(v: &Value) -> String {
         Value::Array(a) => format!("[{}]", a.len()),
         Value::Object(_) => "{…}".into(),
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encode_ref;
+
+    #[test]
+    fn branch_names_are_safe_in_a_url_path() {
+        assert_eq!(encode_ref("main"), "main");
+        // Slashes stay: GitHub reads feature/x as one ref.
+        assert_eq!(encode_ref("feature/payments-v2"), "feature/payments-v2");
+        // Anything that would end the path or start a query is encoded.
+        assert_eq!(encode_ref("fix#12?x"), "fix%2312%3Fx");
+        assert_eq!(encode_ref("a b"), "a%20b");
     }
 }

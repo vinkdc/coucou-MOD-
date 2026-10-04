@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { Settings } from "./state";
+import type { FileContext } from "./snippet";
 
 export const IS_TAURI =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -35,8 +36,19 @@ export const Bridge = {
 
   saveSettings: (settings: Settings) => call<void>("save_settings", { settings }),
 
-  /** Shrink the window down to the invisible wake strip (hidden) or back to full. */
-  setCollapsed: (collapsed: boolean) => call<void>("set_collapsed", { collapsed }),
+  /** Registers the global shortcut, then saves it. Rejects with why it could not. */
+  setHotkey: (enabled: boolean, accelerator: string) =>
+    callOrThrow<Settings>("set_hotkey", { enabled, accelerator }),
+
+  /** What the tray menu and tooltip say. */
+  traySync: (status: string, visible: boolean, paused: boolean) =>
+    call<void>("tray_sync", { status, visible, paused }),
+
+  /** False while a full-screen app or presentation must not be interrupted. */
+  canSummon: () => call<boolean>("can_summon"),
+
+  /** Show the island window, or hide it entirely (no window, no cursor poll). */
+  setVisible: (visible: boolean) => call<void>("set_visible", { visible }),
 
   /**
    * Pushes the island shape in window coordinates. Rust flips click-through from
@@ -45,6 +57,9 @@ export const Bridge = {
   setIslandRect: (x: number, y: number, width: number, height: number) =>
     call<void>("set_island_rect", { x, y, width, height }),
 
+  /** Milliseconds since the user last touched the keyboard or mouse (anywhere). */
+  idleMs: () => call<number>("idle_ms"),
+
   /** Give the window keyboard focus (chat field) and take it away again. */
   focusWindow: (focused: boolean) => call<void>("focus_window", { focused }),
 
@@ -52,8 +67,31 @@ export const Bridge = {
 
   openUrl: (url: string) => call<void>("open_url", { url }),
 
+  /** "Check my step": a screenshot goes to the chosen model, which says if it looks done. */
+  guideCheck: (title: string, step: string) =>
+    call<{ done: boolean; hint: string }>("guide_check", { title, step }),
+
+  /** "Show me": a ring over the thing to click; false when the model can't find it. */
+  guideLocate: (title: string, step: string) =>
+    call<{ found: boolean; label: string }>("guide_locate", { title, step }),
+  guideClear: () => call<void>("guide_clear"),
+
+  /** A guide step's "Open page": one of the allowlisted Windows Settings pages. */
+  openWindowsSettings: (page: string) => call<boolean>("open_windows_settings", { page }),
+
   /** "Open terminal" → opens the folder in VS Code when `code` is on PATH. */
-  openInVSCode: (path: string | null) => call<boolean>("open_in_vscode", { path }),
+  openInVSCode: (path: string | null, ide: string | null = null) =>
+    call<boolean>("open_in_vscode", { path, ide }),
+  /** The editor the user works in: the session's own when its process chain is known. */
+  detectIde: async (pids: number[]): Promise<{ id: string; label: string } | null | undefined> =>
+    IS_TAURI ? (await call<{ id: string; label: string }>("detect_ide", { pids })) ?? null : undefined,
+
+  /**
+   * "Open terminal": back to the window the Claude Code session runs in, found
+   * from its process chain; the folder when that window can't be found.
+   */
+  focusSession: (pids: number[], path: string | null) =>
+    call<boolean>("focus_session", { pids, path }),
 
   quit: () => call<void>("quit_app"),
 
@@ -82,11 +120,68 @@ export const Bridge = {
 
   // ── Chat, files, secrets ──────────────────────────────────────────────────
   /** One chat turn. The API key and any file bytes never leave Rust. */
-  chatSend: (query: string, context: ChatContext | null) =>
-    callOrThrow<{ text: string }>("chat_send", { query, context }),
+  chatSend: (query: string, context: ChatContext | null, persona: string | null = null) =>
+    callOrThrow<{ text: string; actions: string[] }>("chat_send", { query, context, persona }),
   chatReset: () => call<void>("chat_reset"),
+  /**
+   * A few lines of a file a session works on (inside its folder only), for the
+   * Home view. Give `needle` to find a text, or `offset`/`count` for a window.
+   */
+  readSnippet: (req: {
+    path: string;
+    cwd: string;
+    needle: string | null;
+    offset: number | null;
+    count: number;
+    before: number;
+    after: number;
+  }) => call<FileContext>("read_snippet", req),
+  /** Branch, changed files and ahead/behind of a folder, read locally from git. */
+  repoStatus: (path: string) => call<RepoStatus>("repo_status", { path }),
+  /** Claude Code tokens per hour over the last week, read from its local transcripts. */
+  claudeUsage: () => call<ClaudeUsage>("claude_usage"),
+  /** Allow / Deny on an assistant action card — only ever from a click. */
+  assistantConfirm: (id: string, allow: boolean) => call<void>("assistant_confirm", { id, allow }),
+  /** Result of one of Coucou's own tools, run by the island page. */
+  assistantToolResult: (id: string, result: { ok: boolean; text: string }) =>
+    call<void>("assistant_tool_result", { id, result }),
+  /** Gemini models the stored key can use. */
+  geminiModels: () => callOrThrow<{ id: string; label: string }[]>("gemini_models"),
   /** Copies a dropped file into the inbox. */
   ingestFile: (path: string) => callOrThrow<DroppedFile>("ingest_file", { path }),
+  /** A dropped picture as a data: URL for its thumbnail; null for anything else. */
+  filePreview: (path: string) => call<string | null>("file_preview", { path }),
+  /** Opens Windows' snipping overlay; the result arrives as `snip-ready`. */
+  snipStart: () => callOrThrow<void>("snip_start"),
+  /** A file dropped on the page itself, by contents (the webview gives no path). */
+  ingestBytes: async (name: string, bytes: Uint8Array): Promise<DroppedFile> => {
+    try {
+      return await invoke<DroppedFile>("ingest_bytes", bytes, {
+        headers: { "x-file-name": encodeURIComponent(name) },
+      });
+    } catch (err) {
+      throw new Error(String(err));
+    }
+  },
+  /** Native "open file" dialog. Null when cancelled (or outside Tauri). */
+  pickFile: () => call<string | null>("pick_file"),
+
+  // ── Skin bundles ──────────────────────────────────────────────────────────
+  skinsList: () => call<SkinInfo[]>("skins_list"),
+  /** A .zip or a folder; Rust checks all of it first. `keep: false` only reports what is in it. */
+  skinImport: (path: string, keep: boolean) => callOrThrow<SkinInfo>("skin_import", { path, keep }),
+  skinRemove: (id: string) => callOrThrow<void>("skin_remove", { id }),
+  skinManifest: (id: string) => call<string>("skin_manifest", { id }),
+  skinLayer: (id: string, name: string) => call<ArrayBuffer>("skin_layer", { id, name }),
+  /** The skin editor's result: installed, or written to \`zipPath\` to share. Files are base64. */
+  skinSave: (files: [string, string][], zipPath: string | null) =>
+    callOrThrow<SkinInfo>("skin_save", { files, zipPath }),
+  /** Save dialog for an exported skin. */
+  pickSkinZip: (name: string) => call<string | null>("pick_skin_zip", { name }),
+  /** Opens the skin editor on a new skin, or on an installed one. */
+  openSkinEditor: (id: string | null) => call<void>("open_skin_editor", { id }),
+  /** The file dialog behind "Import skin…". */
+  pickSkin: (folder: boolean) => call<string | null>("pick_skin", { folder }),
   /** Only ever tells you whether a key exists — never its value. */
   secretPresent: (key: string) => call<boolean>("secret_present", { key }),
   secretSet: (key: string, value: string) => callOrThrow<void>("secret_set", { key, value }),
@@ -111,6 +206,44 @@ export interface IntegrationUpdate {
 export type ChatContext =
   | { kind: "file"; name: string; path: string }
   | { kind: "window"; appName: string; title: string; url?: string };
+
+export interface RepoStatus {
+  isRepo: boolean;
+  branch: string;
+  detached: boolean;
+  hasUpstream: boolean;
+  ahead: number;
+  behind: number;
+  changed: number;
+  lastCommit: string;
+  /** owner/repo when origin is on GitHub. */
+  github: string | null;
+}
+
+export interface UsageHour {
+  /** Start of the hour, seconds since the epoch. */
+  hour: number;
+  input: number;
+  output: number;
+  cacheWrite: number;
+  cacheRead: number;
+  messages: number;
+}
+
+export interface ClaudeUsage {
+  hours: UsageHour[];
+  /** A Claude Code projects folder exists. */
+  found: boolean;
+}
+
+/** An imported skin bundle, as Rust vetted it. */
+export interface SkinInfo {
+  id: string;
+  name: string;
+  author: string;
+  note: string;
+  persona: string;
+}
 
 export interface DroppedFile {
   name: string;

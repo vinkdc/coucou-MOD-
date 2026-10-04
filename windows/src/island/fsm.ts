@@ -10,8 +10,11 @@ export class IslandStateMachine {
 
   /** home → petit delay, seconds. */
   homeToPetitDelay = 15;
-  /** petit → hidden delay, seconds. */
-  petitToHiddenDelay = 60;
+  /**
+   * petit → hidden delay, seconds. The compact island is only a transient peek
+   * on Windows — it has no notch to rest in — so it goes away quickly.
+   */
+  petitToHiddenDelay = 6;
   /** coucou → petit once the greeting animation ends (no hover). */
   greetAutoCollapseDelay = 0.6;
   /** coucou → petit while the mouse hovers the greeting. */
@@ -31,11 +34,8 @@ export class IslandStateMachine {
   }
 
   mouseEntered() {
+    // No "hidden" case: a hidden island has no window for the mouse to enter.
     switch (this.state) {
-      case "hidden":
-        this.cancelTimers();
-        this.transition("petit");
-        break;
       case "petit":
         this.clear("petitHide");
         break;

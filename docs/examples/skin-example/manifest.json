@@ -1,0 +1,113 @@
+{
+  "format": 1,
+  "id": "example",
+  "name": "Example",
+  "author": "Coucou",
+  "note": "A flat-colour demo skin: the smallest thing that moves like a real one.",
+  "persona": "You are a cheerful little round character who answers briefly and warmly.",
+  "size": {
+    "w": 256,
+    "h": 256
+  },
+  "head": {
+    "cx": 128,
+    "cy": 130,
+    "r": 88
+  },
+  "chin": 205,
+  "tiltPivot": [
+    128,
+    205
+  ],
+  "layers": [
+    {
+      "id": "tail",
+      "src": "tail.png",
+      "role": "back",
+      "behavior": {
+        "type": "bend",
+        "root": [
+          210,
+          90
+        ],
+        "tipY": 232,
+        "bounds": [
+          180,
+          60,
+          250,
+          240
+        ],
+        "grid": [
+          3,
+          6
+        ],
+        "spring": "hair"
+      }
+    },
+    {
+      "id": "head",
+      "src": "head.png",
+      "role": "head"
+    },
+    {
+      "id": "bow",
+      "src": "bow.png",
+      "role": "front",
+      "behavior": {
+        "type": "pivot",
+        "pivot": [
+          193,
+          52
+        ],
+        "spring": "hair",
+        "rotate": 0.3,
+        "squash": {
+          "x": 0.18,
+          "y": 0.14
+        },
+        "squashSpring": "bow"
+      }
+    }
+  ],
+  "eyes": [
+    {
+      "cx": 98,
+      "cy": 135,
+      "x0": 79,
+      "x1": 117,
+      "top": 112,
+      "bottom": 158,
+      "sd": -1
+    },
+    {
+      "cx": 158,
+      "cy": 135,
+      "x0": 139,
+      "x1": 177,
+      "top": 112,
+      "bottom": 158,
+      "sd": 1
+    }
+  ],
+  "iris": {
+    "src": "iris.png",
+    "follow": 14
+  },
+  "lid": "rgb(255, 226, 205)",
+  "lash": "rgb(60, 36, 40)",
+  "cheeks": [
+    [
+      78,
+      170
+    ],
+    [
+      178,
+      170
+    ]
+  ],
+  "blush": {
+    "rx": 22,
+    "ry": 14,
+    "color": "rgb(255, 140, 155)"
+  }
+}

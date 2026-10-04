@@ -32,6 +32,49 @@ fn pipe_path() -> String {
     format!(r"\\.\pipe\coucou-{key}")
 }
 
+/// Our parent, its parent, and so on — Claude Code, the shell, the terminal.
+/// Recorded now because the relay and the shell it runs in are gone by the
+/// time anyone clicks "Open terminal"; the app walks this list to the first
+/// process that owns a window. Process ids only: no names, no command lines.
+pub fn ancestor_pids() -> Vec<u32> {
+    use std::collections::HashMap;
+    use windows::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+
+    let mut parent: HashMap<u32, u32> = HashMap::new();
+    unsafe {
+        let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else { return Vec::new() };
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        if Process32FirstW(snap, &mut entry).is_ok() {
+            loop {
+                parent.insert(entry.th32ProcessID, entry.th32ParentProcessID);
+                if Process32NextW(snap, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = CloseHandle(snap);
+    }
+
+    let mut chain = Vec::new();
+    let mut pid = unsafe { GetCurrentProcessId() };
+    while let Some(&up) = parent.get(&pid) {
+        // Parent ids get reused; a loop or pid 0/4 (the system) ends the walk.
+        if up <= 4 || chain.contains(&up) || chain.len() >= 12 {
+            break;
+        }
+        chain.push(up);
+        pid = up;
+    }
+    chain
+}
+
 /// Opens the pipe. Retries only while the server is busy: any other error means
 /// there is nothing to talk to, and waiting would only delay Claude Code.
 pub fn connect() -> Option<std::fs::File> {

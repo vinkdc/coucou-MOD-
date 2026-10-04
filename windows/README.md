@@ -70,12 +70,32 @@ It works from any terminal — Windows Terminal, PowerShell, VS Code, Git Bash.
 
 ## Chat and keys
 
-**Settings… → Claude** takes your Anthropic API key. Keys live in the **Windows
-Credential Manager**, never on disk and never in the interface — the island can
-only ask whether a key exists. Same for every integration key.
+**Settings… → Claude** takes your Anthropic API key; **Settings… → Gemini** takes
+a Google AI Studio key and chooses which of the two answers in the chat. Keys live
+in the **Windows Credential Manager**, never on disk and never in the interface —
+the island can only ask whether a key exists. Same for every integration key.
+
+The chat assistant can act, not only answer:
+
+| Runs straight away | Asks first (Allow / Deny card in the chat) |
+|---|---|
+| Coucou status, sound, island edge, pause, file picker, settings, integration dashboards, opening a link | Opening a folder or an app, listing a folder, reading a file, taking a screenshot (Windows only), running a PowerShell command (`sh` on Linux) |
+
+The card shows exactly what will run. An unanswered card counts as Deny after two
+minutes. The assistant cannot approve Claude Code's own permission requests.
 
 No telemetry. The only network requests Coucou makes are to the services you
 configure yourself.
+
+## Skins
+
+**Settings… → Character → Import skin…** adds a character from a `.zip` (or
+**Folder…**): a `manifest.json` plus PNG layers, no code. Coucou checks all of it
+and shows its name, author and chat persona before keeping it, in
+`%LOCALAPPDATA%\Coucou\skins\`. **Remove** deletes it. **Create…** opens the skin
+editor: drop your own pictures, drag the face points into place, pick what swings,
+add a face per mood and watch it live, then save or export a .zip. Format and a
+runnable example: [docs/SKINS.md](../docs/SKINS.md).
 
 ## Build it yourself
 

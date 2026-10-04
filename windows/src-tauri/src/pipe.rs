@@ -212,7 +212,17 @@ async fn handle(app: AppHandle, mut pipe: impl Relay) {
     log::line(format!("hook PermissionRequest id={id}"));
     let _ = app.emit_to(WINDOW_LABEL, "hook", payload);
 
-    let decision = wait_for_decision(&id, &mut rx).await;
+    // Answering in the terminal makes Claude Code kill coucou-hook, which closes
+    // our end. Watch for that while we wait, so the card goes away with it.
+    let decision = tokio::select! {
+        d = wait_for_decision(&id, &mut rx) => d,
+        _ = relay_gone(&mut pipe) => {
+            log::line(format!("hook id={id} answered in the terminal"));
+            app.state::<Pending>().0.lock().unwrap().remove(&id);
+            let _ = app.emit_to(WINDOW_LABEL, "approval-gone", id.clone());
+            return;
+        }
+    };
     app.state::<Pending>().0.lock().unwrap().remove(&id);
 
     // No decision: say nothing at all. coucou-hook then writes nothing to stdout
@@ -222,6 +232,18 @@ async fn handle(app: AppHandle, mut pipe: impl Relay) {
         let _ = pipe.flush().await;
     }
     pipe.finish();
+}
+
+/// Resolves once coucou-hook has hung up. It sends nothing after its one line,
+/// so any read that isn't more data means the other end is gone.
+async fn relay_gone(pipe: &mut impl Relay) {
+    let mut scratch = [0u8; 256];
+    loop {
+        match pipe.read(&mut scratch).await {
+            Ok(0) | Err(_) => return,
+            Ok(_) => {}
+        }
+    }
 }
 
 /// Two waits: a short one for "the card is up", then the long one for a human.

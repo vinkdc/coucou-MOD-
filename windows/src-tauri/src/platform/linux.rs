@@ -3,8 +3,9 @@
 //
 // Wayland gives an app no global cursor position and no say over where its
 // window goes, so the island works differently from Windows:
-//   * it is a layer-shell surface anchored to the top edge, above everything,
-//     on compositors that support it (COSMIC, KDE, wlroots — not GNOME);
+//   * it is a layer-shell surface anchored to the top or bottom edge (the
+//     `position` setting), above everything, on compositors that support it
+//     (COSMIC, KDE, wlroots — not GNOME);
 //   * click-through is the window's input region, set to the island shape, so
 //     the compositor itself sends every other click to whatever is underneath;
 //   * the cursor comes from the page's own mouse events, which only fire over
@@ -18,7 +19,7 @@ use std::sync::Mutex;
 
 use gtk::glib::translate::ToGlibPtr;
 use gtk::prelude::*;
-use tauri::{AppHandle, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow};
 
 use super::{home_dir, LocalTime};
 
@@ -160,6 +161,10 @@ pub fn left_button_down() -> bool {
     false
 }
 
+/// GTK hands drops to Tauri directly; nothing to change.
+pub fn allow_webview_drops(_win: &tauri::WebviewWindow) {}
+
+
 // ── Island window ─────────────────────────────────────────────────────────────
 
 /// The few gtk-layer-shell calls we need, straight from the C library.
@@ -169,6 +174,7 @@ mod layer {
 
     pub const LAYER_OVERLAY: c_int = 3;
     pub const EDGE_TOP: c_int = 2;
+    pub const EDGE_BOTTOM: c_int = 3;
     pub const KEYBOARD_NONE: c_int = 0;
     pub const KEYBOARD_ON_DEMAND: c_int = 2;
 
@@ -201,8 +207,8 @@ fn gtk_window_ptr(win: &gtk::ApplicationWindow) -> *mut gtk::ffi::GtkWindow {
 /// WebKitGTK has no competing drop target to remove.
 pub fn unblock_webview_drops(_app: &AppHandle) {}
 
-/// Turns the island into an overlay surface on the top edge that never takes
-/// the keyboard. Must run before the window is first shown: a layer surface
+/// Turns the island into an overlay surface on the top or bottom edge that never
+/// takes the keyboard. Must run before the window is first shown: a layer surface
 /// cannot be made out of a window the compositor already knows.
 ///
 /// Without layer-shell (GNOME, X11, or COUCOU_LAYER_SHELL=0) the window stays
@@ -230,14 +236,22 @@ pub fn make_non_activating(win: &WebviewWindow) {
     // GtkWindow recomputes its own input region (shadow margins included) on
     // every map, over ours.
     gw.set_titlebar(None::<&gtk::Widget>);
+    // A layer surface's anchor is fixed when it is initialised, so unlike Windows
+    // this is read once: changing the setting takes effect at the next launch.
+    let bottom = win
+        .app_handle()
+        .try_state::<crate::Shared>()
+        .map(|s| s.settings.lock().unwrap().position == "bottom")
+        .unwrap_or(false);
+    let edge = if bottom { layer::EDGE_BOTTOM } else { layer::EDGE_TOP };
     let ptr = gtk_window_ptr(&gw);
     unsafe {
         layer::gtk_layer_init_for_window(ptr);
         layer::gtk_layer_set_namespace(ptr, c"coucou".as_ptr());
         layer::gtk_layer_set_layer(ptr, layer::LAYER_OVERLAY);
-        // Top edge only: the compositor centres the surface horizontally.
-        layer::gtk_layer_set_anchor(ptr, layer::EDGE_TOP, 1);
-        // -1: sit right against the screen edge, over any top panel, the way
+        // One edge only: the compositor centres the surface horizontally.
+        layer::gtk_layer_set_anchor(ptr, edge, 1);
+        // -1: sit right against the screen edge, over any panel, the way
         // the Mac island sits in the notch.
         layer::gtk_layer_set_exclusive_zone(ptr, -1);
         layer::gtk_layer_set_keyboard_mode(ptr, layer::KEYBOARD_NONE);
@@ -261,6 +275,88 @@ pub fn make_non_activating(win: &WebviewWindow) {
     });
     LAYER_SURFACE.store(true, Ordering::Relaxed);
     crate::log::line("island is a layer-shell overlay");
+}
+
+/// Raising another app's window is the compositor's call on Wayland; "Open
+/// terminal" falls back to the session's folder there.
+pub fn focus_process_window(_pids: &[u32]) -> bool {
+    false
+}
+
+/// The assistant's `launch_app`: an executable on PATH or a full path, else a
+/// desktop entry through gtk-launch. Never through a shell.
+pub fn launch_app(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("No app given.".into());
+    }
+    let direct = if name.contains('/') {
+        Some(PathBuf::from(name)).filter(|p| p.is_file())
+    } else {
+        find_on_path(name)
+    };
+    let spawned = match direct {
+        Some(path) => Command::new(path).spawn(),
+        None => Command::new("gtk-launch").arg(name).spawn(),
+    };
+    spawned.map(|_| ()).map_err(|e| format!("Could not open \"{name}\": {e}"))
+}
+
+/// The assistant's `run_command`.
+pub fn shell_command(command: &str) -> Command {
+    let mut cmd = Command::new("sh");
+    cmd.args(["-c", command]);
+    cmd
+}
+
+/// Wayland gives no app the screen without a portal round trip; not yet.
+pub fn screenshot() -> Result<(u32, u32, Vec<u8>), String> {
+    Err("Screenshots aren't supported on Linux yet.".into())
+}
+
+/// Media control through MPRIS (`playerctl`) and the sound server (`pactl`):
+/// whatever is playing answers, and nothing gets opened.
+pub fn media_key(action: &str, times: u32) -> Result<(), String> {
+    let times = times.clamp(1, 25);
+    let (program, args): (&str, Vec<String>) = match action {
+        "play_pause" => ("playerctl", vec!["play-pause".into()]),
+        "next" => ("playerctl", vec!["next".into()]),
+        "previous" => ("playerctl", vec!["previous".into()]),
+        "stop" => ("playerctl", vec!["stop".into()]),
+        "volume_up" => ("pactl", vec!["set-sink-volume".into(), "@DEFAULT_SINK@".into(), format!("+{}%", 2 * times)]),
+        "volume_down" => ("pactl", vec!["set-sink-volume".into(), "@DEFAULT_SINK@".into(), format!("-{}%", 2 * times)]),
+        "mute" => ("pactl", vec!["set-sink-mute".into(), "@DEFAULT_SINK@".into(), "toggle".into()]),
+        other => return Err(format!("Unknown media action {other}.")),
+    };
+    let status = Command::new(program)
+        .args(&args)
+        .status()
+        .map_err(|_| format!("{program} isn't installed, so media can't be controlled here."))?;
+    if status.success() { Ok(()) } else { Err(format!("{program} found nothing to control.")) }
+}
+
+/// No portable "time since the last input" across compositors: report idle.
+pub fn idle_ms() -> u64 {
+    u64::MAX
+}
+
+/// Ends a process and everything it started (its children first, then itself).
+pub fn kill_tree(pid: u32) {
+    let _ = Command::new("pkill").args(["-KILL", "-P", &pid.to_string()]).status();
+    let _ = Command::new("kill").args(["-KILL", &pid.to_string()]).status();
+}
+
+/// Wayland and X11 let a window take focus when asked; nothing extra to do.
+pub fn force_foreground(_win: &WebviewWindow) {}
+
+/// No portable "something is full screen" signal across compositors yet.
+pub fn fullscreen_active() -> bool {
+    false
+}
+
+/// The layer surface (or the focus-refusing fallback window) never takes the
+/// keyboard on map, so a plain show is already non-activating here.
+pub fn show_without_focus(win: &WebviewWindow) {
+    let _ = win.show();
 }
 
 /// Temporarily allow keyboard focus so a text field inside the island can be

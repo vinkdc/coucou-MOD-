@@ -1,156 +1,167 @@
-// Overview task ticker — port of TickerView (V2) from IslandViewContent.swift.
+// Overview task ticker, shown like lyrics in a karaoke player.
 //
-// Three rows: completed (A), current → completed (B), incoming (C). Every row
-// position is recomputed from a single clock in `tick()`, driven by the island's
-// frame loop — no CSS transitions and no timers. Chaining CSS transitions with a
-// reset timer let two rows land on the same line when steps arrived in bursts,
-// and any step that arrived mid-animation was dropped outright. Steps are now
-// queued instead, so a burst scrolls past rather than vanishing.
+// Each step is a line in a real column, one under the other. The column only
+// ever moves as a whole: a new step joins at the bottom and the column glides
+// up one line, so the line being "sung" is always the bottom one and the line
+// before it sits dimmed above. Because lines are laid out in flow, two of them
+// can never land on the same spot — the overlap the old three-row machine
+// produced when steps arrived in bursts is impossible by construction.
+//
+// Motion is a CSS transition on the column's transform, so it runs on the
+// compositor, needs nothing from the island's frame loop, and a burst of steps
+// simply retargets the glide instead of queueing animations.
 
 import { h, svg } from "./dom";
 import { ICONS } from "./icons";
-import { cubicBezier, clamp, lerp } from "../core/anim";
 import type { AgentTask } from "../core/state";
 
-const ROW_H = 22;
-/** One step transition, milliseconds. */
-const DURATION = 380;
-/** Beyond this many queued steps we stop trying to show them all. */
-const MAX_QUEUE = 4;
-const COMPLETED_SCALE = 11.5 / 13; // 0.885 — the completed font size
-const EASE = cubicBezier(0.4, 0, 0.2, 1);
+const LINE_H = 22;
+/** Lines kept in the column; older ones are trimmed off the top. */
+const KEEP = 6;
 
-interface Row {
+interface Line {
   el: HTMLElement;
-  chevron: SVGElement;
-  check: SVGElement;
-  shimmer: HTMLElement;
-  dim: HTMLElement;
   text: string;
 }
 
-function makeRow(): Row {
-  const chevron = svg(ICONS.chevronRight, 9, { stroke: 2.4 });
-  const check = svg(ICONS.check, 8, { stroke: 2.2 });
-  check.style.color = "#454850"; // the completed tick is dimmer than the chevron
-  check.style.position = "absolute";
-  chevron.style.position = "absolute";
-  const shimmer = h("span", { class: "tick-text shimmer" });
-  const dim = h("span", {
-    class: "tick-text",
-    style: "position:absolute;left:0;right:0;color:#6b7079",
-  });
+function makeLine(text: string): Line {
   const el = h(
     "div",
-    { class: "ticker-row" },
-    h("span", { class: "tick-icon", style: "position:relative" }, chevron, check),
-    h("span", { style: "position:relative;flex:1 1 auto;min-width:0" }, shimmer, dim),
+    { class: "lyric" },
+    h(
+      "span",
+      { class: "lyric-icon" },
+      svg(ICONS.chevronRight, 9, { stroke: 2.4 }),
+      svg(ICONS.check, 8, { stroke: 2.2 }),
+    ),
+    h("span", { class: "lyric-text", text, "data-text": text }),
   );
-  return { el, chevron, check, shimmer, dim, text: "" };
-}
-
-function setText(row: Row, text: string) {
-  if (row.text === text) return;
-  row.text = text;
-  row.shimmer.textContent = text;
-  row.dim.textContent = text;
-}
-
-/**
- * Places a row. `phase` 0 = current (shimmering, full size), 1 = completed
- * (dim, shifted up-left and scaled down) — same crossfades as the Swift view.
- */
-function place(row: Row, y: number, phase: number, opacity: number) {
-  const scale = 1 - phase * (1 - COMPLETED_SCALE);
-  row.el.style.transform = `translate(${-phase * 10}px, ${y}px) scale(${scale})`;
-  row.el.style.opacity = String(opacity);
-  row.chevron.style.opacity = String(clamp(1 - phase * 2, 0, 1));
-  row.check.style.opacity = String(clamp(phase * 2 - 1, 0, 1));
-  row.shimmer.style.opacity = String(clamp(1 - phase * 1.6, 0, 1));
-  row.dim.style.opacity = String(clamp(phase * 2 - 0.4, 0, 1));
+  return { el, text };
 }
 
 export class Ticker {
   readonly el: HTMLElement;
-  private a = makeRow(); // completed
-  private b = makeRow(); // current
-  private c = makeRow(); // incoming
-  private queue: string[] = [];
-  private startMs: number | null = null;
+  private column: HTMLElement;
+  private lines: Line[] = [];
   private displayIndex = -1;
 
   constructor() {
-    this.el = h("div", { class: "ticker" }, this.a.el, this.b.el, this.c.el);
-    this.rest();
+    this.column = h("div", { class: "lyrics" });
+    this.el = h("div", { class: "ticker" }, this.column);
+    // The ticker fills whatever the card leaves it. When that changes (the
+    // card is laid out, the island resizes), re-anchor without motion.
+    new ResizeObserver(() => this.settle(false)).observe(this.el);
   }
 
-  /** The state between transitions: completed on top, current below. */
-  private rest() {
-    place(this.a, 0, 1, 1);
-    place(this.b, ROW_H, 0, 1);
-    place(this.c, ROW_H * 2, 0, 0);
-  }
-
+  /** CSS runs the motion; the island's frame loop has nothing to keep alive. */
   get animating(): boolean {
-    return this.startMs != null || this.queue.length > 0;
+    return false;
   }
 
   sync(task: AgentTask | null) {
     const steps = task && task.steps.length > 0 ? task.steps : ["…"];
     const idx = task ? Math.min(task.stepIndex, steps.length - 1) : -1;
 
-    // First render: drop straight into place, no animation.
-    if (this.displayIndex < 0) {
+    // First render, or the session restarted (steps cleared): lay the last two
+    // steps down in place, without motion.
+    if (this.displayIndex < 0 || idx < this.displayIndex) {
       this.displayIndex = idx;
-      setText(this.a, idx > 0 ? steps[idx - 1] : "…");
-      setText(this.b, steps[Math.max(idx, 0)]);
-      this.rest();
+      const from = Math.max(0, idx - 1);
+      this.reset(idx > 0 ? steps.slice(from, idx + 1) : [steps[Math.max(idx, 0)]]);
       return;
     }
 
-    // The session restarted (steps were cleared): re-seed rather than scroll.
-    if (idx < this.displayIndex) {
-      this.queue = [];
-      this.startMs = null;
-      this.displayIndex = idx;
-      setText(this.a, idx > 0 ? steps[idx - 1] : "…");
-      setText(this.b, steps[Math.max(idx, 0)]);
-      this.rest();
+    if (idx === this.displayIndex) {
+      // Same step, but its text may have been refined (a longer command line).
+      const last = this.lines.at(-1);
+      const text = steps[Math.max(idx, 0)];
+      if (last && last.text !== text) this.setText(last, text);
       return;
     }
 
-    for (let i = this.displayIndex + 1; i <= idx; i++) this.queue.push(steps[i]);
+    // New steps: each joins the bottom. A burst adds several lines at once and
+    // the column glides straight to the newest — no queue, nothing dropped
+    // from view mid-way, nothing piled up.
+    for (let i = this.displayIndex + 1; i <= idx; i++) this.push(steps[i]);
     this.displayIndex = idx;
-    if (this.queue.length > MAX_QUEUE) {
-      this.queue = this.queue.slice(-MAX_QUEUE);
+    this.trim();
+    this.settle(true);
+  }
+
+  /** Kept for the view contract; motion is CSS-driven. */
+  tick(_nowMs: number) {}
+
+  // ── Column ────────────────────────────────────────────────────────────────
+
+  private push(text: string) {
+    const line = makeLine(text);
+    this.lines.push(line);
+    this.column.append(line.el);
+  }
+
+  private setText(line: Line, text: string) {
+    line.text = text;
+    const span = line.el.querySelector<HTMLElement>(".lyric-text");
+    if (span) {
+      span.textContent = text;
+      span.dataset.text = text;
     }
   }
 
-  /** Called every frame by the island while the overview is on screen. */
-  tick(nowMs: number) {
-    if (this.startMs == null) {
-      if (this.queue.length === 0) return;
-      setText(this.c, this.queue[0]);
-      place(this.c, ROW_H * 2, 0, 0);
-      this.startMs = nowMs;
+  private reset(texts: string[]) {
+    this.column.replaceChildren();
+    this.lines = [];
+    for (const t of texts) this.push(t);
+    this.settle(false);
+  }
+
+  /** Drops lines scrolled out of sight, compensating so nothing visibly moves. */
+  private trim() {
+    const extra = this.lines.length - KEEP;
+    if (extra <= 0) return;
+    for (const line of this.lines.splice(0, extra)) line.el.remove();
+    // The column is about to glide anyway; jump it back by the removed height
+    // first so the glide starts from where the eye already is.
+    this.column.style.transition = "none";
+    this.column.style.transform = `translateY(${-this.offsetFor(this.lines.length - 1 - this.newLines())}px)`;
+    void this.column.offsetHeight; // commit the jump before re-enabling motion
+    this.column.style.transition = "";
+  }
+
+  /** Lines added since the column last settled (they are still below view). */
+  private newLines(): number {
+    return this.lines.filter((l) => !l.el.classList.contains("placed")).length;
+  }
+
+  /**
+   * The column offset that puts line `i` on the ticker's bottom edge, with
+   * the lines before it stacked above. Negative while there are fewer lines
+   * than fit, which pushes them down — the newest is always at the bottom.
+   */
+  private offsetFor(i: number): number {
+    const height = this.el.clientHeight || 2 * LINE_H; // not laid out yet
+    return (i + 1) * LINE_H - height;
+  }
+
+  /** Marks the bottom line current, the rest sung, and glides into place. */
+  private settle(animate: boolean) {
+    const last = this.lines.length - 1;
+    this.lines.forEach((line, i) => {
+      line.el.classList.add("placed");
+      line.el.classList.toggle("now", i === last);
+      line.el.classList.toggle("sung", i < last);
+      // Restart the karaoke sweep on the line that just became current.
+      if (i === last && animate) {
+        line.el.classList.remove("sweep");
+        void line.el.offsetWidth;
+        line.el.classList.add("sweep");
+      }
+    });
+    if (!animate) this.column.style.transition = "none";
+    this.column.style.transform = `translateY(${-this.offsetFor(last)}px)`;
+    if (!animate) {
+      void this.column.offsetHeight;
+      this.column.style.transition = "";
     }
-
-    const p = clamp((nowMs - this.startMs) / DURATION, 0, 1);
-    const e = EASE(p);
-
-    // A leaves upwards and fades a little faster than it moves, as on macOS.
-    place(this.a, lerp(0, -ROW_H, e), 1, clamp(1 - p * 1.35, 0, 1));
-    place(this.b, lerp(ROW_H, 0, e), e, 1);
-    place(this.c, lerp(ROW_H * 2, ROW_H, e), 0, e);
-
-    if (p < 1) return;
-
-    // Commit: the current row becomes the completed one, the incoming row the
-    // current one. Texts move, elements stay put — no reordering, no overlap.
-    setText(this.a, this.b.text);
-    setText(this.b, this.c.text);
-    this.queue.shift();
-    this.startMs = null;
-    this.rest();
   }
 }

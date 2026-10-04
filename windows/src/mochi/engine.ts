@@ -7,6 +7,7 @@
 import { Ease, lerp, type EaseFn } from "../core/anim";
 import { Sound } from "../core/sound";
 import type { BotEmoteName, BotStateName } from "../core/layout";
+import type { FullSkin, RibbonSkin } from "./skin";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -164,10 +165,29 @@ const FONT = `system-ui, "Segoe UI Variable Text", "Segoe UI", sans-serif`;
 
 // ── Engine ────────────────────────────────────────────────────────────────────
 
+/** Three slaps inside this many seconds make Mochi dizzy. */
+const SLAP_WINDOW = 1.5;
+
 export class BotEngine {
   isMini = false;
   /** Solid body colour for mini bots / integration pills (null = Mochi gradient). */
   bodyColor: RGB | null = null;
+  /** Optional look (Settings → Character). Only the main Mochi wears it. */
+  skin: RibbonSkin | FullSkin | null = null;
+
+  /**
+   * The skin is worn by the main character whatever is focused — the island
+   * tints Mochi for every focused task, Claude Code included, so making the
+   * skin give way to a body colour meant it never showed. Mini bots stay plain.
+   */
+  private get skinned(): RibbonSkin | null {
+    return this.skin && !this.isMini && !("full" in this.skin) ? this.skin : null;
+  }
+
+  /** A skin that draws the whole figure (see FullSkin). */
+  private get fullSkin(): FullSkin | null {
+    return this.skin && !this.isMini && "full" in this.skin ? this.skin : null;
+  }
 
   // Animated state (BotEngine `s`)
   yaw = 0; pitch = 0; roll = 0; tilt = 0; open = 1;
@@ -217,7 +237,7 @@ export class BotEngine {
   private miniLookTarget = { x: 0, y: 0 };
   private miniLookNextTime = 0;
 
-  /** Fired when three slaps land inside 1.7 s (→ dizzy + confused view). */
+  /** Fired when three slaps land inside SLAP_WINDOW (→ dizzy + confused view). */
   onDizzy: (() => void) | null = null;
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -300,7 +320,7 @@ export class BotEngine {
     this.interruptGreet();
     if (this.state === "dizzy") return;
     const t = now();
-    this.slapTimes = this.slapTimes.filter((s) => t - s < 1.7);
+    this.slapTimes = this.slapTimes.filter((s) => t - s < SLAP_WINDOW);
     this.slapTimes.push(t);
     Sound.play("slap");
     this.squash();
@@ -597,6 +617,11 @@ export class BotEngine {
     this.slotHVel += acc * dt;
     this.slotH = Math.max(0, this.slotH + this.slotHVel * dt);
 
+    // Hair and bow follow the body's own motion.
+    if (this.skin && !this.isMini) {
+      this.skin.update({ yaw: this.yaw, pitch: this.pitch, tilt: this.tilt, oy: this.oy, sy: this.sy, open: this.open }, dt);
+    }
+
     this.lastTime = n;
   }
 
@@ -647,6 +672,24 @@ export class BotEngine {
     const cx = W / 2 + this.ox * R;
     const cy = H / 2 + this.particleOverhang / 2 + this.oy * R + R * 0.06;
 
+    // A full-figure skin draws the character itself — except while the body
+    // morphs into the drop zone's mouth, which only Mochi's shape can do.
+    const full = this.fullSkin;
+    if (full && this.morph < 0.3) {
+      full.draw(
+        x,
+        {
+          cx, cy, R, sx: this.sx, sy: this.sy, tilt: this.tilt, yaw: this.yaw, pitch: this.pitch,
+          open: this.open, eye: this.eyeOverride ?? this.cfg.eye,
+          blush: Math.max(this.blush, this.tint * 0.5),
+        },
+        (c, shape, w, h, sd, ink) => this.drawEyeShape(c, shape, w, h, sd, ink),
+      );
+      if (this.badge && this.badgeS > 0.01) this.drawBadge(x, this.badge, R, cx, cy);
+      this.drawParticles(x, R, cx, cy);
+      return;
+    }
+
     this.drawHandsBehind(x, R, rx, ry, cx, cy);
 
     x.save();
@@ -655,9 +698,19 @@ export class BotEngine {
     x.scale(this.sx, this.sy);
 
     const body = this.bodyPath(rx, ry, R);
+    const skin = this.skinned;
+    // The skin fades out as the body morphs into the drop zone's mouth.
+    const skinAlpha = skin ? Math.max(0, 1 - this.morph * 2) : 0;
+    if (skin && skinAlpha > 0) {
+      x.save();
+      x.globalAlpha = skinAlpha;
+      skin.drawBehind(x, R, rx, ry, this.yaw);
+      x.restore();
+    }
     this.drawBody(x, body, R, rx, ry);
 
-    const blushVal = Math.max(this.blush, this.tint * 0.5) * (1 - this.morph);
+    const blushVal =
+      Math.max(this.blush, this.tint * 0.5, skin ? skin.blushFloor : 0) * (1 - this.morph);
     if (blushVal > 0.01) {
       x.save();
       x.clip(body);
@@ -671,8 +724,22 @@ export class BotEngine {
       x.restore();
     }
 
+    if (skin && skinAlpha > 0) {
+      x.save();
+      x.globalAlpha = skinAlpha;
+      skin.drawHair(x, body, R, rx, ry, this.yaw);
+      x.restore();
+    }
+
     this.drawEyes(x, body, R, rx, ry);
     if (this.morph > 0.05) this.drawMouth(x, body, R);
+
+    if (skin && skinAlpha > 0) {
+      x.save();
+      x.globalAlpha = skinAlpha;
+      skin.drawBow(x, R, rx, ry, this.yaw);
+      x.restore();
+    }
 
     x.restore();
 
@@ -711,16 +778,22 @@ export class BotEngine {
   }
 
   private drawBody(x: CanvasRenderingContext2D, body: Path2D, R: number, rx: number, ry: number) {
-    if (this.bodyColor) {
-      // Mini bots: flat solid fill — no gradient, no reflection, no highlight
+    const skin = this.skinned;
+    // A skinned face keeps its own colours; anything else with a body colour
+    // (mini bots, a focused integration) is a flat solid fill.
+    if (this.bodyColor && !(skin && this.morph < 0.5)) {
       x.fillStyle = rgba(this.bodyColor, 1);
       x.fill(body);
       return;
     }
-    const g = x.createLinearGradient(rx * 0.7, -ry * 0.85, -rx * 0.8, ry * 0.9);
-    g.addColorStop(0, rgba(BASE_TOP));
-    g.addColorStop(1, rgba(BASE_BOTTOM));
-    x.fillStyle = g;
+    if (skin && this.morph < 0.5) {
+      x.fillStyle = skin.faceFill(x, ry);
+    } else {
+      const g = x.createLinearGradient(rx * 0.7, -ry * 0.85, -rx * 0.8, ry * 0.9);
+      g.addColorStop(0, rgba(BASE_TOP));
+      g.addColorStop(1, rgba(BASE_BOTTOM));
+      x.fillStyle = g;
+    }
     x.fill(body);
 
     const effectiveTint = this.tint * (1 - this.morph);
@@ -770,14 +843,36 @@ export class BotEngine {
       const ey = -Math.sin(eyePitch) * ry + (this.morph > 0 ? ry * 0.14 * this.morph : 0);
       const fx = lerp(Math.max(0.18, Math.cos(eyeYaw)), 1, this.morph * 0.7);
       const fy = lerp(Math.max(0.18, cp), 1, this.morph * 0.7);
-      const eyeMult = this.isMini ? 1.9 : 1.0;
+      // The Ribbon look has big anime eyes; Mochi keeps its own.
+      const eyeMult = this.isMini ? 1.9 : this.skinned && this.morph < 0.5 ? 1.4 : 1.0;
       const ew = R * EYE_W * this.es * eyeMult;
       const eh = R * EYE_H * this.es * eyeMult;
 
       x.save();
       x.translate(ex, ey);
       x.scale(fx, fy);
+      const skin = this.skinned;
+      const open = shape === "pill" || shape === "wide";
+      if (skin && open && this.morph < 0.5) {
+        // Green eyes, dark at the lid, bright below, like the figure's.
+        const g = x.createLinearGradient(0, -eh / 2, 0, eh / 2);
+        g.addColorStop(0, skin.eyeTop);
+        g.addColorStop(1, skin.eyeBottom);
+        x.fillStyle = g;
+      }
       this.drawEyeShape(x, shape, ew, eh, sd, ink);
+      // A sparkle, gone while the eye is half shut so a blink reads cleanly.
+      if (skin && open && this.morph < 0.5 && this.open > 0.6) {
+        x.fillStyle = "rgba(255,255,255,0.9)";
+        x.beginPath();
+        x.arc(-ew * 0.16, -eh * 0.2, ew * 0.17, 0, Math.PI * 2);
+        x.fill();
+        x.fillStyle = "rgba(255,255,255,0.55)";
+        x.beginPath();
+        x.arc(ew * 0.14, eh * 0.16, ew * 0.08, 0, Math.PI * 2);
+        x.fill();
+      }
+      x.fillStyle = ink;
       x.restore();
     }
     x.restore();

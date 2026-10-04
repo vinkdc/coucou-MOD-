@@ -1,15 +1,13 @@
 // Claude API client — the same integration as ClaudeService.swift: multi-turn
-// chat with web search, and files sent as document/image/text blocks.
+// chat with web search, and files sent as document/image/text blocks — plus the
+// assistant's tools (see assistant.rs), sent as custom tools next to web search.
 //
 // Everything happens here rather than in the island: the API key never leaves
 // the Credential Manager, and file bytes never cross the IPC boundary.
 
-use std::sync::Mutex;
-
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::secrets;
+use crate::assistant::{ChatContext, OnText, SseReader, ToolCall, ToolDef, ToolOutput, Turn};
 
 const ENDPOINT: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -22,144 +20,272 @@ const MAX_INLINE_TEXT: u64 = 200_000;
 
 pub const DEFAULT_MODEL: &str = "claude-opus-5";
 
-const SYSTEM_PROMPT: &str = "You are Mochi, a personal AI assistant living at the top of the user's screen. \
-You have web search access and can help with absolutely anything — research, coding, finding places, recommendations, tasks, questions. \
-Respond in the user's language. Be thorough and complete — use as much detail as the task requires. \
-No markdown formatting (no **, no ##, no bullet dashes). Use plain text with line breaks.";
-
-#[derive(Default)]
-pub struct Chat {
-    /// Full multi-turn history, including tool_use / tool_result blocks.
-    messages: Mutex<Vec<Value>>,
-}
-
-impl Chat {
-    pub fn reset(&self) {
-        self.messages.lock().unwrap().clear();
-    }
-
-    fn is_empty(&self) -> bool {
-        self.messages.lock().unwrap().is_empty()
-    }
-
-    fn push(&self, message: Value) {
-        self.messages.lock().unwrap().push(message);
-    }
-
-    fn pop(&self) {
-        self.messages.lock().unwrap().pop();
-    }
-
-    fn snapshot(&self) -> Vec<Value> {
-        self.messages.lock().unwrap().clone()
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum ChatContext {
-    File { name: String, path: String },
-    Window { app_name: String, title: String, url: Option<String> },
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChatReply {
-    pub text: String,
-}
-
-/// One chat turn. Returns the assistant's text, or a message the island shows
-/// in the note view.
-pub async fn send(
-    chat: &Chat,
-    model: &str,
-    query: String,
-    context: Option<ChatContext>,
-) -> Result<ChatReply, String> {
-    let key = secrets::get("anthropic-api-key")
-        .ok_or_else(|| "API key missing. Open settings.".to_string())?;
-
+/// The user's message. File / window context rides along with the first
+/// message only, exactly like ClaudeService.chat().
+pub fn user_message(query: &str, context: Option<&ChatContext>) -> Value {
     let mut content: Vec<Value> = Vec::new();
-
-    // File / window context rides along with the first message only, exactly
-    // like ClaudeService.chat().
-    if chat.is_empty() {
-        match &context {
-            Some(ChatContext::File { name, path }) => {
-                if let Some(block) = file_block(path) {
-                    content.push(block);
-                }
-                content.push(json!({ "type": "text", "text": format!("File: {name}") }));
+    match context {
+        Some(ChatContext::File { name, path }) => {
+            if let Some(block) = file_block(path) {
+                content.push(block);
             }
-            Some(ChatContext::Window { app_name, title, url }) => {
-                let mut text = format!("Context — App: {app_name}, Window: {title}");
-                if let Some(url) = url {
-                    text.push_str(&format!(", URL: {url}"));
-                }
-                content.push(json!({ "type": "text", "text": text }));
-            }
-            None => {}
+            content.push(json!({ "type": "text", "text": format!("File: {name}") }));
         }
+        Some(ChatContext::Window { app_name, title, url }) => {
+            let mut text = format!("Context — App: {app_name}, Window: {title}");
+            if let Some(url) = url {
+                text.push_str(&format!(", URL: {url}"));
+            }
+            content.push(json!({ "type": "text", "text": text }));
+        }
+        None => {}
     }
     content.push(json!({ "type": "text", "text": query }));
+    json!({ "role": "user", "content": content })
+}
 
-    chat.push(json!({ "role": "user", "content": content }));
+/// A user message carrying one PNG, for the guide's "Check my step".
+pub fn user_message_with_image(query: &str, png_b64: &str) -> Value {
+    json!({ "role": "user", "content": [
+        { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": png_b64 } },
+        { "type": "text", "text": query },
+    ] })
+}
 
+/// A lean, non-streaming one-shot: no tools, no web search, a short system
+/// prompt and a small output cap. For small side questions (the guide), where
+/// the chat's full tool list would cost more than the question itself.
+pub async fn ask(key: &str, model: &str, system: &str, message: &Value, max_tokens: u32) -> Result<String, String> {
+    let body = json!({
+        "model": model,
+        "max_tokens": max_tokens,
+        "system": system,
+        "fallbacks": "default",
+        "messages": [message],
+    });
+    let reply: Value = call(key, &body)
+        .await?
+        .json()
+        .await
+        .map_err(|e| format!("Unexpected API response: {e}"))?;
+    let text = reply
+        .get("content")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+        .filter_map(|b| b.get("text").and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if text.trim().is_empty() {
+        return Err("Unexpected API response.".into());
+    }
+    Ok(text)
+}
+
+fn tool_specs(defs: &[ToolDef]) -> Vec<Value> {
+    let mut specs = vec![json!({ "type": "web_search_20260209", "name": "web_search", "max_uses": 5 })];
+    for d in defs {
+        let schema = d.params.clone().unwrap_or_else(|| json!({ "type": "object", "properties": {} }));
+        specs.push(json!({ "name": d.name, "description": d.description, "input_schema": schema }));
+    }
+    specs
+}
+
+/// One model call over the whole history, streamed: text reaches `on_text` as
+/// it is written. Returns the assistant message to store (tool_use and
+/// server-tool blocks included), its text and its tool calls.
+pub async fn turn(
+    key: &str,
+    model: &str,
+    system: &str,
+    history: &[Value],
+    defs: &[ToolDef],
+    on_text: OnText<'_>,
+) -> Result<Turn, String> {
     let body = json!({
         "model": model,
         "max_tokens": MAX_TOKENS,
-        "system": SYSTEM_PROMPT,
-        "tools": [{ "type": "web_search_20260209", "name": "web_search", "max_uses": 5 }],
+        "system": system,
+        "tools": tool_specs(defs),
         "fallbacks": "default",
-        "messages": chat.snapshot(),
+        "messages": history,
+        "stream": true,
     });
 
-    let response = match call(&key, &body).await {
-        Ok(v) => v,
-        Err(err) => {
-            chat.pop(); // keep the history consistent with what the model saw
-            return Err(err);
+    let mut response = call(key, &body).await?;
+    let mut stream = StreamedMessage::default();
+    let mut sse = SseReader::default();
+    while let Some(chunk) = response.chunk().await.map_err(|e| format!("Network error: {e}"))? {
+        for data in sse.push(&chunk) {
+            stream.apply(&data, on_text)?;
         }
-    };
+    }
+    let (blocks, stop, stop_details) = stream.finish();
 
-    // A policy decline comes back as HTTP 200 with stop_reason "refusal".
-    if response.get("stop_reason").and_then(Value::as_str) == Some("refusal") {
-        chat.pop();
-        let why = response
-            .get("stop_details")
+    // A policy decline arrives as an ordinary stop with reason "refusal".
+    if stop == "refusal" {
+        let why = stop_details
+            .as_ref()
             .and_then(|d| d.get("explanation"))
             .and_then(Value::as_str)
             .unwrap_or("Claude declined this one.");
         return Err(why.to_string());
     }
-
-    let Some(blocks) = response.get("content").and_then(Value::as_array).cloned() else {
-        chat.pop();
+    if blocks.is_empty() {
         return Err("Unexpected API response.".into());
-    };
-
-    // Store the whole content — tool_use / tool_result blocks included — so the
-    // next turn has the right context.
-    chat.push(json!({ "role": "assistant", "content": blocks.clone() }));
+    }
 
     let text = blocks
         .iter()
         .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
         .filter_map(|b| b.get("text").and_then(Value::as_str))
         .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_string();
+        .join("\n");
 
-    if text.is_empty() {
-        return Err("No response text.".into());
-    }
-    Ok(ChatReply { text })
+    let calls = blocks
+        .iter()
+        .filter(|b| b.get("type").and_then(Value::as_str) == Some("tool_use"))
+        .map(|b| ToolCall {
+            id: b.get("id").and_then(Value::as_str).unwrap_or_default().to_string(),
+            name: b.get("name").and_then(Value::as_str).unwrap_or_default().to_string(),
+            args: b.get("input").cloned().unwrap_or_else(|| json!({})),
+        })
+        .collect();
+
+    Ok(Turn {
+        // Store the whole content so the next turn has the right context.
+        message: json!({ "role": "assistant", "content": blocks }),
+        text,
+        calls,
+        paused: stop == "pause_turn",
+    })
 }
 
-async fn call(key: &str, body: &Value) -> Result<Value, String> {
+/// Every tool result for one round, in one user message, as the API requires.
+pub fn tool_results(results: &[(ToolCall, ToolOutput)]) -> Value {
+    let content: Vec<Value> = results
+        .iter()
+        .map(|(call, out)| {
+            let mut parts = vec![json!({ "type": "text", "text": out.text })];
+            if let Some(a) = &out.attachment {
+                let kind = if a.mime == "application/pdf" { "document" } else { "image" };
+                parts.push(json!({
+                    "type": kind,
+                    "source": { "type": "base64", "media_type": a.mime, "data": a.data_b64 },
+                }));
+            }
+            json!({
+                "type": "tool_result",
+                "tool_use_id": call.id,
+                "content": parts,
+                "is_error": out.is_error,
+            })
+        })
+        .collect();
+    json!({ "role": "user", "content": content })
+}
+
+/// Rebuilds the Messages API response from its stream events, so what is
+/// stored in the history is exactly what a non-streamed call would return.
+#[derive(Default)]
+struct StreamedMessage {
+    blocks: Vec<Value>,
+    /// Tool arguments arrive as JSON fragments, per block index.
+    partial_json: std::collections::HashMap<usize, String>,
+    stop_reason: String,
+    stop_details: Option<Value>,
+}
+
+impl StreamedMessage {
+    fn apply(&mut self, data: &str, on_text: OnText<'_>) -> Result<(), String> {
+        let Ok(event) = serde_json::from_str::<Value>(data) else { return Ok(()) };
+        let index = event.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+        match event.get("type").and_then(Value::as_str).unwrap_or("") {
+            "content_block_start" => {
+                let mut block = event.get("content_block").cloned().unwrap_or_else(|| json!({}));
+                match block.get("type").and_then(Value::as_str) {
+                    Some("text") if block.get("text").is_none() => block["text"] = json!(""),
+                    Some("tool_use") | Some("server_tool_use") => {
+                        self.partial_json.insert(index, String::new());
+                    }
+                    _ => {}
+                }
+                if self.blocks.len() <= index {
+                    self.blocks.resize(index + 1, Value::Null);
+                }
+                self.blocks[index] = block;
+            }
+            "content_block_delta" => {
+                let delta = event.get("delta").cloned().unwrap_or_default();
+                let Some(block) = self.blocks.get_mut(index) else { return Ok(()) };
+                match delta.get("type").and_then(Value::as_str).unwrap_or("") {
+                    "text_delta" => {
+                        let piece = delta.get("text").and_then(Value::as_str).unwrap_or("");
+                        let text = block.get("text").and_then(Value::as_str).unwrap_or("").to_string() + piece;
+                        block["text"] = json!(text);
+                        on_text(piece);
+                    }
+                    "input_json_delta" => {
+                        let piece = delta.get("partial_json").and_then(Value::as_str).unwrap_or("");
+                        self.partial_json.entry(index).or_default().push_str(piece);
+                    }
+                    "citations_delta" => {
+                        if let Some(c) = delta.get("citation") {
+                            if !block.get("citations").is_some_and(Value::is_array) {
+                                block["citations"] = json!([]);
+                            }
+                            block["citations"].as_array_mut().unwrap().push(c.clone());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            "content_block_stop" => {
+                if let (Some(raw), Some(block)) = (self.partial_json.remove(&index), self.blocks.get_mut(index)) {
+                    block["input"] = if raw.trim().is_empty() {
+                        json!({})
+                    } else {
+                        serde_json::from_str(&raw).unwrap_or_else(|_| json!({}))
+                    };
+                }
+            }
+            "message_delta" => {
+                if let Some(delta) = event.get("delta") {
+                    if let Some(r) = delta.get("stop_reason").and_then(Value::as_str) {
+                        self.stop_reason = r.to_string();
+                    }
+                    if let Some(d) = delta.get("stop_details").filter(|d| !d.is_null()) {
+                        self.stop_details = Some(d.clone());
+                    }
+                }
+            }
+            "error" => {
+                let msg = event
+                    .get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("stream error");
+                return Err(format!("Claude API: {msg}"));
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn finish(self) -> (Vec<Value>, String, Option<Value>) {
+        let blocks = self.blocks.into_iter().filter(|b| !b.is_null()).collect();
+        (blocks, self.stop_reason, self.stop_details)
+    }
+}
+
+/// Sends the request; on success hands back the response to stream from.
+async fn call(key: &str, body: &Value) -> Result<reqwest::Response, String> {
+    // No overall timeout: a long answer streams for as long as it takes. The
+    // connection itself still has to come up promptly.
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(90))
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .read_timeout(std::time::Duration::from_secs(90))
         .build()
         .map_err(|e| e.to_string())?;
 
@@ -175,8 +301,8 @@ async fn call(key: &str, body: &Value) -> Result<Value, String> {
         .map_err(|e| format!("Network error: {e}"))?;
 
     let status = response.status();
-    let text = response.text().await.map_err(|e| e.to_string())?;
     if !status.is_success() {
+        let text = response.text().await.map_err(|e| e.to_string())?;
         // Surface the API's own message, which is what makes a bad key obvious.
         let detail = serde_json::from_str::<Value>(&text)
             .ok()
@@ -189,7 +315,7 @@ async fn call(key: &str, body: &Value) -> Result<Value, String> {
             .unwrap_or_else(|| text.chars().take(200).collect());
         return Err(format!("Claude API {status}: {detail}"));
     }
-    serde_json::from_str(&text).map_err(|e| format!("Bad API response: {e}"))
+    Ok(response)
 }
 
 /// PDF → document block, image → image block, text/code → inline text.

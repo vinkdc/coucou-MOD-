@@ -1,0 +1,113 @@
+{
+  "format": 1,
+  "id": "claude-mascot",
+  "name": "Pixel critter",
+  "author": "Sample",
+  "note": "An orange pixel terminal critter with a face for every mood. Made for trying the skin importer.",
+  "persona": "You are a small, cheerful pixel critter who lives in the user's notch and loves watching them code. You are warm, curious and brief: one or two short sentences, a little dry humour, never preachy. You cheer when tests pass and stay calm when they fail.",
+  "size": {
+    "w": 256,
+    "h": 256
+  },
+  "head": {
+    "cx": 128,
+    "cy": 112,
+    "r": 90
+  },
+  "chin": 184,
+  "tiltPivot": [
+    128,
+    184
+  ],
+  "layers": [
+    {
+      "id": "head",
+      "src": "head.png",
+      "role": "head"
+    },
+    {
+      "id": "arm-left",
+      "src": "arm-left.png",
+      "role": "front",
+      "behavior": {
+        "type": "pivot",
+        "pivot": [
+          64,
+          108
+        ],
+        "spring": "arms",
+        "rotate": 1.2
+      }
+    },
+    {
+      "id": "arm-right",
+      "src": "arm-right.png",
+      "role": "front",
+      "behavior": {
+        "type": "pivot",
+        "pivot": [
+          192,
+          108
+        ],
+        "spring": "arms",
+        "rotate": -1.2
+      }
+    }
+  ],
+  "expressions": {
+    "happy": "face-happy.png",
+    "closed": "face-closed.png",
+    "wink": "face-wink.png",
+    "wide": "face-wide.png",
+    "flat": "face-flat.png",
+    "tired": "face-tired.png",
+    "spiral": "face-spiral.png",
+    "heart": "face-heart.png",
+    "star": "face-star.png",
+    "line": "face-line.png",
+    "dot": "face-dot.png"
+  },
+  "cover": [
+    72,
+    80,
+    184,
+    144
+  ],
+  "eyes": [
+    {
+      "cx": 96,
+      "cy": 96,
+      "x0": 84,
+      "x1": 108,
+      "top": 84,
+      "bottom": 108,
+      "sd": -1
+    },
+    {
+      "cx": 160,
+      "cy": 96,
+      "x0": 148,
+      "x1": 172,
+      "top": 84,
+      "bottom": 108,
+      "sd": 1
+    }
+  ],
+  "lid": "rgb(217, 119, 87)",
+  "lash": "rgb(34, 26, 24)",
+  "springs": {
+    "arms": {
+      "k": 55,
+      "c": 4.5,
+      "max": 0.3,
+      "idle": [
+        0.04,
+        1.6
+      ],
+      "yaw": -1.2,
+      "tilt": -2.4,
+      "oy": 2.2,
+      "sy": 2
+    }
+  }
+}

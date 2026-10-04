@@ -1,10 +1,8 @@
-// Drop zone, upload progress and the "what do you want to do with it" card —
-// ports of UploadView / UploadingView / ChooseView from IslandViewContent.swift.
-//
-// Sending a file by email is not in the Windows v1, so `choose` offers the one
-// action the spec asks for: ask a question about it.
+// Drop zone and upload progress — ports of UploadView / UploadingView from
+// IslandViewContent.swift. A dropped file goes straight to the chat when the bar
+// is done (island.ts askAboutFile): there is nothing else to choose between.
 
-import { h, clear } from "./dom";
+import { h } from "./dom";
 import { State } from "../core/state";
 import type { ViewActions, ViewHost } from "./views";
 
@@ -19,7 +17,8 @@ function dashedFrame(): SVGSVGElement {
   rect.setAttribute("y", "0.75");
   rect.setAttribute("width", "calc(100% - 1.5px)");
   rect.setAttribute("height", "calc(100% - 1.5px)");
-  rect.setAttribute("rx", "20");
+  // The card corner (12) less the frame's 0.75 px inset, so the dashes follow it.
+  rect.setAttribute("rx", "11.25");
   rect.setAttribute("fill", "none");
   rect.setAttribute("stroke-width", "1.5");
   rect.setAttribute("stroke-dasharray", "6 5");
@@ -27,7 +26,7 @@ function dashedFrame(): SVGSVGElement {
   return el;
 }
 
-export function buildUpload(): ViewHost {
+export function buildUpload(actions: ViewActions): ViewHost {
   const frame = dashedFrame();
   const title = h("div", { class: "drop-title", text: "Drop your files here" });
   const tags = h(
@@ -35,11 +34,13 @@ export function buildUpload(): ViewHost {
     { class: "drop-tags" },
     ...["PDF", "Images", "Code", "Docs"].map((t) => h("span", { text: t })),
   );
+  // Dragging is not the only way in: the whole card opens a file dialog.
+  const browse = h("div", { class: "drop-browse", text: "or click to choose a file" });
   const card = h(
     "div",
-    { class: "card drop-card" },
+    { class: "card drop-card", title: "Choose a file…", onclick: () => actions.pickFile() },
     frame,
-    h("div", { class: "drop-body" }, title, tags),
+    h("div", { class: "drop-body" }, title, tags, browse),
   );
   const el = h("div", { class: "view" }, card);
 
@@ -79,45 +80,6 @@ export function buildUploading(): ViewHost {
       glow.style.transform = `translateX(${Math.max(0, w - 14)}px)`;
       glow.style.opacity = State.uploadProgress > 0.01 ? "1" : "0";
       card.classList.toggle("done", done);
-    },
-  };
-}
-
-export function buildChoose(actions: ViewActions): ViewHost {
-  const title = h("div", { class: "title" });
-  const sub = h("div", { class: "sub", text: "What do you want to do with it?" });
-  const row = h(
-    "div",
-    { class: "actions" },
-    h("button", {
-      class: "btn primary",
-      text: "Ask a question",
-      onclick: () => actions.setView("prompt"),
-    }),
-    h("button", {
-      class: "btn secondary",
-      text: "Cancel",
-      onclick: () => actions.setView(State.defaultView()),
-    }),
-  );
-  const el = h(
-    "div",
-    { class: "view" },
-    h(
-      "div",
-      { class: "card" },
-      h("div", { class: "stack", style: "padding:0 18px 0 98px" }, title, sub, row),
-    ),
-  );
-
-  return {
-    el,
-    sync() {
-      clear(title);
-      title.append(
-        h("b", { text: State.droppedFile?.name ?? "file" }),
-        document.createTextNode(" is ready."),
-      );
     },
   };
 }

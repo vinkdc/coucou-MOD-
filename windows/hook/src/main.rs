@@ -161,6 +161,11 @@ fn read_event() -> Option<(String, String)> {
         }
     }
 
+    // The processes above us, so "Open terminal" can bring back the very window
+    // this session runs in — not just its folder.
+    #[cfg(windows)]
+    map.insert("coucou_ancestors".into(), serde_json::json!(win::ancestor_pids()));
+
     truncate_strings(&mut payload);
 
     let mut line = payload.to_string();

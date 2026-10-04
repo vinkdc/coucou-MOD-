@@ -14,7 +14,8 @@ export const USC = {
   CARD_Y: 42,
   CARD_W: 620,
   CARD_H: 124,
-  CARD_R: 20,
+  // Concentric with the island: its 22 px corner minus the 10 px inset.
+  CARD_R: 12,
   REST_X: 140,
   REST_Y: 104,
   D_BOX: 62,
@@ -150,7 +151,6 @@ export interface UploadFrame {
   flash: number;
   check: number;
   greenWash: number;
-  chooseAlpha: number;
   progEnd: number;
   growStart: number;
   growEnd: number;
@@ -185,7 +185,6 @@ function restFrame(): UploadFrame {
     flash: 0,
     check: 0,
     greenWash: 0,
-    chooseAlpha: 0,
     progEnd: USC.T_PROG_START + 2.4,
     growStart: USC.T_PROG_START + 2.4 + 0.25,
     growEnd: USC.T_PROG_START + 2.4 + 0.7,
@@ -385,7 +384,7 @@ class UploadSequence {
     // long hover never trips the post-drop visuals.
     const pt = isDragging ? Math.min(t, USC.T_DROP - USC.DT) : t;
 
-    // Morph: 0→1 on entry, 1→0 shrinking to a ball, 0→1 growing back at choose.
+    // Morph: 0→1 on entry, 1→0 shrinking to a ball, 0→1 growing back at the end.
     let morph: number;
     if (pt < USC.T_CHEW_END) morph = eBack(seg(pt, entered, entered + 0.38));
     else if (pt < growStart) morph = 1 - eOut(seg(pt, USC.T_CHEW_END, USC.T_SHRINK_END));
@@ -506,7 +505,6 @@ class UploadSequence {
       uploadGreen = (baseGreen + flashExtra) * fadeOut;
     }
     f.greenWash = Math.max(hoverGreen, uploadGreen);
-    f.chooseAlpha = seg(pt, growStart + 0.15, growEnd);
 
     // Mouth rect in island coordinates — the file is clipped against it.
     const R = f.d / 2 / 1.04;

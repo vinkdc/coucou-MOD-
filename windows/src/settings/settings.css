@@ -5,7 +5,7 @@
      the <select> popup is white text on white. */
   color-scheme: dark;
 
-  --font: system-ui, "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --font: "Inter Variable", system-ui, "Segoe UI Variable Text", "Segoe UI", sans-serif;
   --mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
   --ink: #f5f6f8;
   --dim: #9398a1;
@@ -54,7 +54,7 @@ h1 .version {
 
 section {
   background: var(--card);
-  border: 1px solid var(--hairline);
+  border: 0;
   border-radius: 14px;
   padding: 16px 18px;
   display: flex;
@@ -198,7 +198,7 @@ input[type="password"],
 select {
   font: 400 12.5px var(--font);
   background: rgba(255, 255, 255, 0.07);
-  border: 1px solid var(--hairline);
+  border: 0;
   border-radius: 8px;
   color: var(--ink);
   padding: 5px 8px;
@@ -211,7 +211,7 @@ input::placeholder {
 input:focus,
 select:focus {
   outline: none;
-  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.12); /* focus brightens the field, no light ring */
 }
 
 /* The popup is drawn by the OS: give it an explicit pair of colours rather than
@@ -224,7 +224,7 @@ select option {
 .diff {
   font: 400 11.5px/1.5 var(--mono);
   background: #08090b;
-  border: 1px solid var(--hairline);
+  border: 0;
   border-radius: 10px;
   padding: 10px 12px;
   max-height: 260px;
@@ -264,4 +264,113 @@ select option {
 .notice.warn {
   background: rgba(245, 165, 36, 0.13);
   color: #fbc06a;
+}
+
+/* Skin import: what is in the bundle, shown before it is kept. */
+.skin-confirm:not(:empty) {
+  margin: 6px 0 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #0e0f11;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skin-title {
+  font: 600 13px var(--font);
+  color: var(--ink);
+}
+
+/* Keyboard section: key caps are fills, never outlines. */
+.keys {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+kbd {
+  font: 600 11.5px var(--font);
+  min-width: 24px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--ink);
+  text-align: center;
+  white-space: nowrap;
+  /* A dark groove under the cap gives it height without a light edge. */
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+}
+
+.keys-current {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+}
+
+.key-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.key-group-title {
+  font: 600 12px var(--font);
+  color: var(--dim);
+}
+
+.key-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.key-combos {
+  flex: 0 0 168px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.key-what {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--dim);
+}
+
+/* Rebindable rows: label, caps, Change…/Reset on one line. */
+.key-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+}
+
+.key-line .key-what {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.key-note {
+  margin: -4px 0 2px;
+}
+
+.key-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--dim);
+}
+
+button.ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
 }

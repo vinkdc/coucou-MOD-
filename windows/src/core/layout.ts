@@ -6,6 +6,7 @@ export type IslandMode = "hidden" | "compact" | "expanded";
 
 export type IslandViewName =
   | "overview"
+  | "editor"
   | "empty"
   | "approval"
   | "question"
@@ -14,13 +15,13 @@ export type IslandViewName =
   | "confused"
   | "upload"
   | "uploading"
-  | "choose"
   | "mail"
   | "prompt"
   | "searching"
   | "result"
   | "note"
   | "settings"
+  | "guide"
   | "greeting";
 
 export type BotStateName =
@@ -50,8 +51,11 @@ export interface ViewLayout {
 
 // The window is a fixed 720×320 (largest view) like the macOS panel; the island is
 // drawn inside it, glued to the top edge and horizontally centred.
-export const PANEL_W = 720;
-export const PANEL_H = 320;
+export const PANEL_W = 900;
+export const PANEL_H = 600;
+
+/** The chat when it has been expanded with the header button. */
+export const CHAT_EXPANDED = { w: 820, h: 520 } as const;
 
 // No notch on a PC: these are the hidden/compact sizes from docs/SPEC.md.
 export const NOTCH_W = 184;
@@ -62,12 +66,10 @@ export const EXPANDED_W = 640;
 export const ROUNDED_CORNER = 14; // hidden / compact
 export const EXPANDED_CORNER = 22;
 
-/** Invisible hover strip that wakes the island when hidden. */
-export const WAKE_STRIP_W = 240;
-export const WAKE_STRIP_H = 6;
-
 export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
-  overview: { height: 160, botX: 68, botY: null, botDiameter: 58, agentMode: "pills" },
+  overview: { height: 188, botX: 68, botY: null, botDiameter: 58, agentMode: "pills" },
+  // The file and its change: 42 (header) + 268 (card) + 10 (inset) tall, Mochi top left over the steps.
+  editor: { height: 320, botX: 64, botY: 104, botDiameter: 58, agentMode: "none" },
   empty: { height: 160, botX: 70, botY: null, botDiameter: 62, agentMode: "none" },
   approval: { height: 160, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
   question: { height: 160, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
@@ -78,13 +80,13 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   // botY 103 = bar top (42 + 58) + 3, so the dot really rides the bar. The Swift
   // layout says 118 while its own comment says 103; the comment matches the spec.
   uploading: { height: 176, botX: 46, botY: 103, botDiameter: 20, agentMode: "none" },
-  choose: { height: 176, botX: 60, botY: 101, botDiameter: 52, agentMode: "column" },
   mail: { height: 240, botX: 56, botY: null, botDiameter: 46, agentMode: "column" },
   prompt: { height: 160, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
   searching: { height: 160, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
   result: { height: 160, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
   note: { height: 160, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
   settings: { height: 160, botX: 54, botY: null, botDiameter: 46, agentMode: "none" },
+  guide: { height: 160, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
   greeting: { height: 150, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
 };
 
@@ -101,6 +103,11 @@ export function islandSize(
   mode: IslandMode,
   view: IslandViewName,
   chatCount = 0,
+  /** Extra rows the home view shows right now (the session chips). */
+  overviewExtra = 0,
+  chatExpanded = false,
+  /** Height the chat's content needs (attachment and messages), measured; 0 = unknown. */
+  chatFit = 0,
 ): { w: number; h: number } {
   switch (mode) {
     case "hidden":
@@ -110,7 +117,15 @@ export function islandSize(
     case "compact":
       return { w: COMPACT_W, h: NOTCH_H };
     case "expanded": {
-      const h = view === "prompt" ? chatPromptHeight(chatCount) : VIEW_LAYOUTS[view].height;
+      if (view === "prompt" && chatExpanded) return { w: CHAT_EXPANDED.w, h: CHAT_EXPANDED.h };
+      const h =
+        view === "prompt"
+          ? chatFit > 0
+            ? // Grows with what is in it, so a long reply is shown whole; past
+              // the maximize size the conversation scrolls.
+              Math.max(chatPromptHeight(0), Math.min(CHAT_EXPANDED.h, chatFit))
+            : chatPromptHeight(chatCount)
+          : VIEW_LAYOUTS[view].height + (view === "overview" ? overviewExtra : 0);
       return { w: EXPANDED_W, h };
     }
   }

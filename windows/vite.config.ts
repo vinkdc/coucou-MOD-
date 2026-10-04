@@ -42,10 +42,41 @@ function sharedSounds(): Plugin {
   };
 }
 
+/**
+ * src/mochi/local/ holds a developer's own, never-shipped character skins (see
+ * src/mochi/localSkins.ts). Dev builds load them; release builds must not carry
+ * a byte of them. The code is already dead in a release build, but Vite still
+ * emits any asset a local module imports as soon as it reads the file, so in
+ * builds every module there is replaced by an empty one before it is read.
+ */
+function noLocalSkinsInBuilds(): Plugin {
+  // The trailing slash matters: src/mochi/localSkins.ts must not match.
+  const local = resolve(__dirname, "src/mochi/local").replace(/\\/g, "/") + "/";
+  return {
+    name: "coucou-no-local-skins",
+    apply: "build",
+    enforce: "pre",
+    load(id) {
+      if (id.replace(/\\/g, "/").startsWith(local)) return "export default null;";
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [sharedSounds()],
+  plugins: [sharedSounds(), noLocalSkinsInBuilds()],
   clearScreen: false,
-  server: { port: 1420, strictPort: true, host: "127.0.0.1" },
+  server: {
+    port: 1420,
+    strictPort: true,
+    host: "127.0.0.1",
+    watch: {
+      // Cargo locks files under target/ while it builds them; if Vite watches
+      // them, Node throws EBUSY and takes `tauri dev` down with it. `target/` is
+      // at the workspace root here (this folder), not inside src-tauri/, so both
+      // trees have to be ignored. The Tauri CLI watches src-tauri itself.
+      ignored: ["**/src-tauri/**", "**/target/**"],
+    },
+  },
   envPrefix: ["VITE_", "TAURI_ENV_"],
   build: {
     target: "chrome110",
@@ -56,6 +87,8 @@ export default defineConfig({
       input: {
         island: resolve(__dirname, "index.html"),
         settings: resolve(__dirname, "settings.html"),
+        skinEditor: resolve(__dirname, "skin-editor.html"),
+        highlight: resolve(__dirname, "highlight.html"),
       },
     },
   },

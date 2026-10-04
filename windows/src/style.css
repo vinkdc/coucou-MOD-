@@ -4,8 +4,17 @@
 :root {
   color-scheme: dark;
 
-  --font: system-ui, "Segoe UI Variable Text", "Segoe UI", "Segoe UI Emoji", sans-serif;
+  /* Inter is bundled with the app (see main.ts); the rest are fallbacks. */
+  --font: "Inter Variable", system-ui, "Segoe UI Variable Text", "Segoe UI", "Segoe UI Emoji", sans-serif;
   --mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+
+  /* Concentric corners: a rounded shape nested in another has the outer
+     radius minus the gap between them, so both curves share one centre and
+     read as a single corner. Keep in step with EXPANDED_CORNER (layout.ts)
+     and #content's padding. */
+  --island-radius: 22px;
+  --island-inset: 10px;
+  --card-radius: calc(var(--island-radius) - var(--island-inset));
 
   --ink: #f5f6f8;        /* primary text */
   --ink-2: #f1f2f4;
@@ -52,19 +61,10 @@ body {
   inset: 0;
 }
 
-/* Invisible strip that wakes the island when it is hidden. */
-#wake-strip {
-  position: fixed;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 240px;
-  height: 6px;
-  background: transparent;
-}
-
 /* ── Island ─────────────────────────────────────────────────────────────── */
 
+/* The anchor and radius here are the top-edge default; both are rewritten
+   inline by Island.applyGeometry() from the position setting. */
 #island {
   position: absolute;
   top: 0;
@@ -73,6 +73,44 @@ body {
   border-radius: 0 0 14px 14px;
   overflow: visible;
   will-change: width, height, transform;
+}
+
+/* Ears: concave fillets where the island meets the screen edge, so it flares
+   into the edge like a notch instead of stopping at a hard right angle. Their
+   size (--ear) follows the island's radius; applyGeometry() sets it, and the
+   edge they sit on follows data-edge. */
+#island::before,
+#island::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: var(--ear, 0px);
+  height: var(--ear, 0px);
+  pointer-events: none;
+}
+
+#island::before {
+  left: calc(-1 * var(--ear, 0px));
+  background: radial-gradient(circle at 0 100%, transparent calc(var(--ear, 0px) - 0.5px), #000 var(--ear, 0px));
+}
+
+#island::after {
+  right: calc(-1 * var(--ear, 0px));
+  background: radial-gradient(circle at 100% 100%, transparent calc(var(--ear, 0px) - 0.5px), #000 var(--ear, 0px));
+}
+
+#island[data-edge="bottom"]::before,
+#island[data-edge="bottom"]::after {
+  top: auto;
+  bottom: 0;
+}
+
+#island[data-edge="bottom"]::before {
+  background: radial-gradient(circle at 0 0, transparent calc(var(--ear, 0px) - 0.5px), #000 var(--ear, 0px));
+}
+
+#island[data-edge="bottom"]::after {
+  background: radial-gradient(circle at 100% 0, transparent calc(var(--ear, 0px) - 0.5px), #000 var(--ear, 0px));
 }
 
 #island-clip {
@@ -107,23 +145,6 @@ body {
 #upload-canvas {
   position: absolute;
   inset: 0;
-}
-
-#upload-overlay {
-  position: absolute;
-  inset: 0;
-  display: none;
-}
-
-/* Invisible hit areas over the buttons the canvas paints. */
-.upload-hit {
-  position: absolute;
-  padding: 0;
-  border: 0;
-  border-radius: 13px;
-  background: none;
-  pointer-events: auto;
-  cursor: pointer;
 }
 
 /* The ordinary views step aside while the sequence owns the body. */
@@ -186,7 +207,7 @@ body {
 #content {
   position: absolute;
   inset: 0;
-  padding: 8px 10px 10px;
+  padding: 8px var(--island-inset) var(--island-inset);
   display: flex;
   flex-direction: column;
   transition: opacity 0.2s ease-in-out;
@@ -208,10 +229,13 @@ body {
 }
 
 .tab {
-  width: 30px;
   height: 22px;
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px 0 8px;
+  font: 600 11.5px var(--font);
+  white-space: nowrap;
   border: 0;
   background: transparent;
   border-radius: 11px;
@@ -276,9 +300,9 @@ body {
 .card {
   position: relative;
   height: 100%;
-  border-radius: 20px;
+  border-radius: var(--card-radius);
   background: var(--card);
-  border: 1px solid var(--hairline);
+  border: 0;
   overflow: hidden;
 }
 
@@ -350,7 +374,7 @@ body {
 }
 
 .btn.secondary .kbd {
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .link-btn {
@@ -392,7 +416,10 @@ body {
 .card-body {
   position: relative;
   z-index: 1;
-  padding-top: 10px;
+  height: 100%;
+  padding: 10px 0 10px;
+  display: flex;
+  flex-direction: column;
 }
 
 .who {
@@ -433,46 +460,93 @@ body {
 
 /* Ticker */
 
+/* Fills the card under the name row: the line being sung sits on the bottom
+   edge and earlier steps stack above it, fading out towards the top. */
 .ticker {
   position: relative;
-  height: 44px;
-  margin: 6px 12px 0 108px;
+  flex: 1 1 auto;
+  min-height: 44px;
+  margin: 4px 12px 0 108px;
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    #000 12%,
-    #000 85%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 85%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
 }
 
-.ticker-row {
-  position: absolute;
-  left: 0;
-  right: 0;
+/* Steps read like karaoke lyrics: the column glides up a line at a time, the
+   bottom line is the one being sung, the one above it is already sung. */
+.lyrics {
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.lyric {
   height: 22px;
   display: flex;
   align-items: center;
   gap: 6px;
   transform-origin: left center;
-  will-change: transform, opacity;
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.42s ease-out;
 }
 
-.ticker-row .tick-icon {
+.lyric.sung {
+  opacity: 0.55;
+  transform: scale(0.885);
+}
+
+.lyric-icon {
   width: 12px;
+  flex: 0 0 12px;
   display: grid;
   place-items: center;
-  flex: 0 0 12px;
   color: var(--dim-2);
 }
 
-.ticker-row .tick-text {
+.lyric-icon svg {
+  grid-area: 1 / 1;
+  transition: opacity 0.3s ease-out;
+}
+
+.lyric-icon svg:last-child,
+.lyric.sung .lyric-icon svg:first-child {
+  opacity: 0;
+}
+
+.lyric.sung .lyric-icon svg:last-child {
+  opacity: 1;
+  color: #454850;
+}
+
+.lyric-text {
+  position: relative;
+  min-width: 0;
   font: 500 13px var(--font);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: #6b7079;
+  transition: color 0.42s ease-out;
+}
+
+/* The line being sung: a bright copy of the text laid over the dim one, wiped
+   in from the left like karaoke, then left lit. */
+.lyric.now .lyric-text::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #f5f6f8;
+  clip-path: inset(0 0 0 0);
+}
+
+.lyric.now.sweep .lyric-text::after {
+  animation: karaoke 0.85s cubic-bezier(0.33, 0, 0.2, 1);
+}
+
+@keyframes karaoke {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
 }
 
 /* Shimmer sweep, 2.2 s — same as TickerShimmerText / ShimmeringText */
@@ -499,7 +573,328 @@ body {
   }
 }
 
-/* ── Agent pills ────────────────────────────────────────────────────────── */
+/* ── Cockpit (home view, right card) ────────────────────────────────────── */
+/* Rows are fills, never outlines: a slightly lighter tone sets each one off. */
+
+.cockpit {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+
+.cp-row {
+  height: 26px;
+  flex: 0 0 26px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink-2);
+  font: 500 12px var(--font);
+  cursor: default;
+  transition: background 0.15s ease-out;
+}
+
+.cp-row:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.cp-row.bad {
+  background: rgba(244, 80, 94, 0.14);
+}
+
+.cp-row.bad .cp-meta {
+  color: #ff8d97;
+}
+
+.cp-state {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--dim-4);
+}
+
+.cp-state.success {
+  background: var(--green);
+}
+
+.cp-state.pending {
+  background: var(--amber);
+  animation: cp-pulse 1.4s ease-in-out infinite;
+}
+
+.cp-state.failure {
+  background: var(--red);
+}
+
+@keyframes cp-pulse {
+  50% { opacity: 0.35; }
+}
+
+.cp-row.quiet {
+  color: var(--dim-3);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.cp-row svg {
+  flex: 0 0 auto;
+  color: var(--dim-2);
+}
+
+.cp-row.warn svg {
+  color: var(--amber);
+}
+
+.cp-main {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cp-meta {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--dim-2);
+  font: 500 11px var(--font);
+  white-space: nowrap;
+}
+
+.cp-row.warn .cp-meta {
+  color: #f7c36a;
+}
+
+.cp-sessions {
+  display: flex;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+
+.cp-ses {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--dim-2);
+  font: 500 11px var(--font);
+  cursor: default;
+  transition: background 0.15s ease-out, color 0.15s ease-out;
+}
+
+.cp-ses:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+/* The selected session is brighter, not outlined. */
+.cp-ses.on {
+  background: rgba(255, 255, 255, 0.13);
+  color: var(--ink);
+}
+
+.cp-ses-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cp-ses-time {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--dim-3);
+  font: 500 10px var(--font);
+}
+
+.cp-chips,
+.cp-strip {
+  display: flex;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+
+.cp-chip {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(10, 132, 255, 0.18);
+  color: #6cb6ff;
+  font: 600 11px var(--font);
+  cursor: default;
+  transition: background 0.15s ease-out, transform 0.08s ease-out;
+}
+
+.cp-chip:hover {
+  background: rgba(10, 132, 255, 0.3);
+}
+
+.cp-chip:active {
+  transform: scale(0.96);
+}
+
+.cp-int {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--dim-2);
+  font: 500 10.5px var(--font);
+  cursor: default;
+  min-width: 0;
+  transition: background 0.15s ease-out, color 0.15s ease-out;
+}
+
+.cp-int:hover {
+  background: rgba(255, 255, 255, 0.11);
+  color: var(--ink-2);
+}
+
+.cp-int span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cp-flag {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 6px;
+}
+
+/* Pages of the cockpit, side by side; swiping slides the track. */
+
+/* Absolute so the off-screen pages never count toward the card's width:
+   the right column sizes to its content and would grow to fit them all. */
+.cp-pager {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+}
+
+.cp-track {
+  display: flex;
+  height: 100%;
+  transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.cp-track > .cockpit {
+  flex: 0 0 100%;
+  min-width: 0;
+}
+
+.cp-dots {
+  position: absolute;
+  left: 50%;
+  bottom: 3px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+}
+
+.cp-dot {
+  width: 12px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+  display: grid;
+  place-items: center;
+}
+
+.cp-dot::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  transition: background 0.15s ease-out, width 0.2s ease-out;
+}
+
+.cp-dot.on::before {
+  width: 10px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+/* Usage page */
+
+.cp-meter {
+  flex: 0 0 6px;
+  height: 6px;
+  margin: 2px 2px 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.cp-meter i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--green-2);
+  transition: width 0.4s ease-out;
+}
+
+.cp-meter.hot i {
+  background: var(--amber);
+}
+
+.cp-legend {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 3px;
+  color: var(--dim-2);
+  font: 500 10.5px var(--font);
+  white-space: nowrap;
+}
+
+.cp-week {
+  height: 30px;
+  flex-basis: 30px;
+}
+
+.cp-days {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+
+.cp-days i {
+  width: 4px;
+  border-radius: 1px;
+  background: var(--dim-4);
+}
+
+.cp-days i.today {
+  background: var(--green-2);
+}
+
+/* ── Agent pills (no longer on the home view; kept for the mini bots) ───── */
 
 .pills {
   position: relative;
@@ -518,7 +913,7 @@ body {
   height: 28px;
   border-radius: 999px;
   background: var(--card-flat);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid transparent; /* tinted per agent in views.ts — never white */
   display: flex;
   align-items: center;
   cursor: default;
@@ -608,7 +1003,7 @@ body {
   font: 400 12px var(--mono);
   color: #e8e9ec;
   background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 0;
   border-radius: 10px;
   padding: 5px 10px;
   max-width: 100%;
@@ -631,6 +1026,36 @@ body {
 .actions {
   display: flex;
   gap: 8px;
+}
+
+/* Guide: the step is the headline, at most two lines. */
+.guide-step {
+  font: 600 15px/1.3 var(--font);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.guide-ok,
+.guide-no {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guide-ok {
+  color: #34d399;
+}
+
+.guide-no {
+  color: #f7c36a;
+}
+
+.guide-open {
+  margin-left: auto;
+  color: var(--dim-2);
 }
 
 .status-badge {
@@ -738,9 +1163,20 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* ── Chat (prompt view) ─────────────────────────────────────────────────── */
+/* Modelled on Messages: blue bubbles for you, graphite for Mochi, quiet
+   capsules for the steps it took, an iOS-style alert for anything it asks to
+   do, and a capsule field to type in. Colours are Apple's dark system palette. */
 
 .chat-card {
+  --chat-blue: #0a84ff;
+  --chat-graphite: #2c2c2e;
+  --chat-graphite-2: #3a3a3c;
+  --chat-label: rgba(255, 255, 255, 0.92);
+  --chat-label-2: rgba(235, 235, 245, 0.6);
+  --chat-label-3: rgba(235, 235, 245, 0.3);
+  --chat-separator: rgba(0, 0, 0, 0.32); /* a dark groove, never a light line */
   overflow: hidden;
+  background: #1c1c1e;
 }
 
 .chat-body {
@@ -749,31 +1185,104 @@ input[type="range"]::-webkit-slider-thumb {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px 16px 14px 84px;
+  gap: 8px;
+  padding: 12px 14px 12px 84px;
+  font-feature-settings: "ss01";
+  letter-spacing: -0.008em;
 }
 
 .chip-row:empty {
   display: none;
 }
 
+/* The chip, and under it a thumbnail when the attachment is a picture. */
+.chip-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* The chip is a button now (it folds the preview); keep it looking the same. */
+button.chip {
+  border: 0;
+  cursor: default;
+}
+
+button.chip:hover {
+  background: color-mix(in srgb, var(--chat-graphite), #fff 6%);
+}
+
+.chip-caret {
+  margin-left: -1px;
+  opacity: 0.7;
+  transition: transform 0.2s ease-out;
+}
+
+.chip.open .chip-caret {
+  transform: rotate(90deg);
+}
+
+.chip-thumb.folded {
+  display: none;
+}
+
+.chip-row {
+  flex: 0 0 auto;
+}
+
+.chip-thumb {
+  display: block;
+  cursor: default;
+  max-width: min(260px, 60%);
+  max-height: 150px;
+  border-radius: 10px;
+  background: var(--chat-graphite);
+  object-fit: contain;
+  animation: chip-thumb-in 0.25s ease-out;
+}
+
+@keyframes chip-thumb-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  padding: 3px 10px 3px 8px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-  font: 400 11.5px var(--font);
-  color: var(--ink-2);
-  border: 1.5px solid rgba(255, 255, 255, 0.75);
+  background: var(--chat-graphite);
+  font: 500 11px var(--font);
+  color: var(--chat-label-2);
   transform: scale(1.06);
-  transition: border-color 0.3s ease-out 0.45s, transform 0.3s ease-out 0.45s;
+  transition: transform 0.3s ease-out 0.45s;
 }
 
 .chip.settled {
-  border-color: rgba(255, 255, 255, 0);
   transform: scale(1);
+}
+
+/* ✕ at the end of the attachment chip: removes the file from the question. */
+.chip-remove {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin: 0 -5px 0 1px;
+  border-radius: 50%;
+  color: var(--chat-label-2);
+  opacity: 0.7;
+  cursor: default;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.chip-remove:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .chip-dot {
@@ -789,73 +1298,252 @@ input[type="range"]::-webkit-slider-thumb {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 2px 0;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  gap: 2px;
+  padding: 8px 2px 4px 0;
+  scrollbar-width: none;
+  /* Messages fade out under the top edge instead of being cut. */
+  mask-image: linear-gradient(to bottom, transparent 0, #000 14px);
+}
+
+.chat-log::-webkit-scrollbar {
+  display: none;
 }
 
 .chat-row {
   display: flex;
+  flex-shrink: 0;
+}
+
+/* The log is rebuilt on every change, so only the newest message animates in. */
+.chat-row:last-child {
+  animation: chat-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .chat-row.user {
   justify-content: flex-end;
-  padding-left: 32px;
+  padding-left: 48px;
+}
+
+@keyframes chat-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
 }
 
 .bubble {
-  background: rgba(255, 255, 255, 0.13);
-  border-radius: 12px;
-  padding: 6px 10px;
-  font: 400 12.5px var(--font);
-  color: var(--ink-2);
+  max-width: 100%;
+  background: var(--chat-blue);
+  color: #fff;
+  /* Rounded all round inside a run; the last bubble of a run gets the tail. */
+  border-radius: 16px;
+  padding: 6px 12px 7px;
+  font: 400 13px/1.4 var(--font);
+  letter-spacing: -0.01em;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   user-select: text;
 }
 
-.reply {
-  font: 400 12.5px var(--font);
-  color: #b0b5be;
-  white-space: pre-wrap;
-  padding-right: 8px;
-  user-select: text;
+.bubble.reply {
+  max-width: 84%;
+  background: var(--chat-graphite);
+  color: var(--chat-label);
 }
 
-.typing {
+.bubble.tail {
+  border-bottom-right-radius: 4px;
+}
+
+.bubble.reply.tail,
+.bubble.typing.tail {
+  border-bottom-right-radius: 16px;
+  border-bottom-left-radius: 4px;
+}
+
+/* Hierarchy comes from rhythm: one speaker's run sits tight (2px), a change
+   of speaker opens a clear gap. */
+.chat-row.turn-start {
+  margin-top: 10px;
+}
+
+.chat-row.user .bubble {
+  max-width: 78%;
+}
+
+/* A step the assistant took — a quiet capsule, not a message. */
+.chat-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: calc(100% - 28px);
+  padding: 2px 9px 2px 7px;
+  border-radius: 999px;
+  background: rgba(118, 118, 128, 0.16);
+  font: 500 10.5px var(--font);
+  color: var(--chat-label-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-action span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-action svg {
+  flex: 0 0 auto;
+  color: #30d158;
+}
+
+.chat-action.failed svg {
+  color: #ff453a;
+}
+
+/* Allow / Deny for a risky action, laid out like an iOS alert. */
+.chat-confirm {
+  width: min(100%, 360px);
+  border-radius: 14px;
+  background: var(--chat-graphite);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.chat-confirm.allowed,
+.chat-confirm:has(.settled) {
+  box-shadow: none;
+}
+
+.chat-confirm-body {
   display: flex;
-  gap: 4px;
-  padding: 4px 2px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
 }
 
-.typing i {
-  width: 5px;
-  height: 5px;
+.chat-confirm-title {
+  font: 600 12.5px var(--font);
+  color: var(--chat-label);
+}
+
+.chat-confirm-title::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 7px 1px 0;
   border-radius: 50%;
-  background: var(--dim-3);
-  animation: typing 0.9s ease-in-out infinite;
+  background: #ff9f0a;
+  vertical-align: middle;
 }
 
-.typing i:nth-child(2) {
-  animation-delay: 0.14s;
+.chat-confirm:has(.settled) .chat-confirm-title::before {
+  background: var(--chat-label-3);
 }
 
-.typing i:nth-child(3) {
-  animation-delay: 0.28s;
+.chat-confirm-detail {
+  font: 400 11.5px/1.4 var(--mono);
+  color: var(--chat-label);
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 8px;
+  padding: 6px 9px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 84px;
+  overflow-y: auto;
+  user-select: text;
+}
+
+.chat-confirm-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--chat-separator);
+}
+
+.chat-confirm-buttons.settled {
+  display: flex;
+  padding: 6px 12px 7px;
+}
+
+.chat-confirm-btn {
+  border: 0;
+  background: transparent;
+  padding: 8px 0 9px;
+  font: 400 13px var(--font);
+  color: var(--chat-blue);
+  cursor: default;
+}
+
+.chat-confirm-btn + .chat-confirm-btn {
+  border-left: 1px solid var(--chat-separator);
+}
+
+.chat-confirm-btn.default {
+  font-weight: 600;
+}
+
+.chat-confirm-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.chat-confirm-btn:active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.chat-confirm-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 500 11px var(--font);
+  color: var(--chat-label-2);
+}
+
+.chat-confirm.allowed .chat-confirm-status svg {
+  color: #30d158;
+}
+
+/* Mochi is typing: three dots in a graphite bubble, like Messages. */
+.bubble.typing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--chat-graphite);
+  border-radius: 16px 16px 16px 4px;
+  padding: 9px 12px;
+}
+
+.bubble.typing i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(235, 235, 245, 0.55);
+  animation: typing 1.2s ease-in-out infinite;
+}
+
+.bubble.typing i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.bubble.typing i:nth-child(3) {
+  animation-delay: 0.36s;
 }
 
 @keyframes typing {
-  0%, 100% { transform: scale(0.6); }
-  50% { transform: scale(1.2); }
+  0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-2px); }
 }
 
 .chat-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.07);
-  border-radius: 12px;
+  gap: 6px;
+  padding: 4px 4px 4px 14px;
+  background: rgba(118, 118, 128, 0.18);
+  border-radius: 999px;
+  transition: background 0.15s ease-out;
+}
+
+.chat-bar:focus-within {
+  background: rgba(118, 118, 128, 0.28);
 }
 
 .chat-input {
@@ -863,32 +1551,38 @@ input[type="range"]::-webkit-slider-thumb {
   min-width: 0;
   border: 0;
   background: transparent;
-  color: var(--ink);
+  color: var(--chat-label);
   font: 400 13px var(--font);
+  letter-spacing: -0.01em;
   outline: none;
   cursor: text;
 }
 
 .chat-input::placeholder {
-  color: var(--dim-3);
+  color: var(--chat-label-3);
 }
 
 .send-btn {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
   border: 0;
   border-radius: 50%;
-  background: var(--ink);
-  color: #0b0c0e;
+  background: rgba(118, 118, 128, 0.32);
+  color: rgba(255, 255, 255, 0.5);
   display: grid;
   place-items: center;
   cursor: default;
-  transition: transform 0.08s ease-out;
+  transition: background 0.15s ease-out, color 0.15s ease-out, transform 0.08s ease-out;
+}
+
+.send-btn.ready {
+  background: var(--chat-blue);
+  color: #fff;
 }
 
 .send-btn:active {
-  transform: scale(0.94);
+  transform: scale(0.92);
 }
 
 /* ── Drop zone ──────────────────────────────────────────────────────────── */
@@ -962,6 +1656,19 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.07);
   color: #b9bdc4;
+}
+
+.drop-card {
+  cursor: pointer;
+}
+
+.drop-browse {
+  font: 400 11px var(--font);
+  color: #8a8f98;
+}
+
+.drop-card:hover .drop-browse {
+  color: #d5d7db;
 }
 
 /* ── Uploading ──────────────────────────────────────────────────────────── */
@@ -1357,4 +2064,379 @@ input[type="range"]::-webkit-slider-thumb {
 
 .int-card.detail {
   padding-top: 8px;
+}
+
+/* ── Home: the file and its change ──────────────────────────────────────── */
+
+/* Compact card: same header as the ticker, then the file and a few lines of it. */
+.card-body.act {
+  cursor: pointer;
+}
+
+.act-line {
+  padding: 0 36px 0 108px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--dim-2);
+}
+
+.act-line svg {
+  flex: 0 0 auto;
+}
+
+.act-line b {
+  font: 600 12px var(--font);
+  color: var(--ink);
+}
+
+.act-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 11px var(--mono);
+  color: var(--dim);
+}
+
+/* A recessed well: fill, no outline. */
+.act-code {
+  margin: 7px 12px 0 108px;
+  padding: 5px 0;
+  border-radius: 6px;
+  background: var(--card-flat);
+  overflow: hidden;
+  transition: background 0.15s ease-out;
+}
+
+.card-body.act:hover .act-code {
+  background: #121317;
+}
+
+/* Code lines (compact card and editor) */
+
+.code-lines {
+  font: 400 11px/16px var(--mono);
+}
+
+.cl {
+  display: flex;
+  height: 16px;
+  white-space: pre;
+  color: #c9ced6;
+}
+
+.cl-no {
+  flex: 0 0 28px;
+  padding-right: 6px;
+  text-align: right;
+  color: var(--dim-5);
+}
+
+.cl-sign {
+  flex: 0 0 12px;
+  text-align: center;
+  color: var(--dim-4);
+}
+
+.cl-text {
+  min-width: 0;
+  padding-right: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cl.add {
+  background: rgba(48, 164, 108, 0.16);
+  box-shadow: inset 2px 0 0 #30a46c;
+}
+
+.cl.del {
+  background: rgba(229, 72, 77, 0.16);
+  box-shadow: inset 2px 0 0 #e5484d;
+}
+
+.cl.add .cl-no,
+.cl.add .cl-sign {
+  color: var(--green-2);
+}
+
+.cl.del .cl-no,
+.cl.del .cl-sign {
+  color: var(--red-text);
+}
+
+.cl.del .cl-text,
+.cl.del .cl-text span {
+  color: var(--dim-3);
+  text-decoration: line-through;
+}
+
+.t-kw { color: #c792ea; }
+.t-str { color: #c3e88d; }
+.t-num { color: #ff9e64; }
+.t-type { color: #ffcb6b; }
+.t-fn { color: #82aaff; }
+.t-com { color: var(--dim-4); font-style: italic; }
+
+.ed-empty {
+  padding: 8px 12px;
+  font: 400 12px var(--font);
+  color: var(--dim-3);
+}
+
+/* Editor view: steps on the left (Mochi above them), the file on the right. */
+
+.ed-card {
+  display: flex;
+}
+
+.ed-left {
+  flex: 0 0 156px;
+  padding: 100px 0 0 18px;
+  min-width: 0;
+}
+
+.ed-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 600 15px var(--font);
+  color: var(--ink);
+}
+
+.ed-name span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ed-agent {
+  margin: 1px 0 0;
+  font: 400 12.5px var(--font);
+  color: var(--dim-3);
+}
+
+.ed-steps {
+  margin-top: 14px;
+}
+
+.st {
+  height: 23px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font: 500 13px var(--font);
+}
+
+.st.done { color: #b0b5be; }
+.st.now { color: var(--ink); font-weight: 600; }
+.st.todo { color: var(--dim-5); }
+
+.st-icon {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.st.done .st-icon {
+  background: var(--green-2);
+  color: #0b0c0e;
+}
+
+.st-spin,
+.st-ring {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--dim-5);
+}
+
+.st-spin {
+  border-top-color: var(--ink);
+}
+
+.view.on .st-spin {
+  animation: st-turn 0.8s linear infinite;
+}
+
+@keyframes st-turn {
+  to { transform: rotate(360deg); }
+}
+
+.st-verb {
+  flex: 0 0 auto;
+}
+
+.st-target {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 11px var(--font);
+  color: var(--dim-4);
+}
+
+.ed-right {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 6px 6px 6px 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 6px;
+  background: var(--card-flat);
+  overflow: hidden;
+}
+
+.file-tab {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 12px 4px 4px;
+}
+
+.ft-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border-radius: 3px;
+  background: #15171b;
+  font: 500 12px var(--font);
+  color: var(--ink);
+}
+
+.ft-badge {
+  height: 14px;
+  min-width: 16px;
+  padding: 0 3px;
+  display: grid;
+  place-items: center;
+  border-radius: 2px;
+  font: 700 8px var(--font);
+  color: #fff;
+}
+
+.ft-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+}
+
+.ft-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 11px var(--mono);
+  color: var(--dim-4);
+}
+
+.ed-code {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 6px 0;
+  overflow: hidden;
+}
+
+.ed-code .code-lines {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.ed-code .cl {
+  height: 18px;
+}
+
+.ed-code .cl-no {
+  flex-basis: 40px;
+}
+
+.view.on .cl.live .cl-text::after {
+  content: "";
+  display: inline-block;
+  width: 1.5px;
+  height: 13px;
+  margin-left: 1px;
+  vertical-align: -2px;
+  background: var(--ink);
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+
+@keyframes caret-blink {
+  to { visibility: hidden; }
+}
+
+/* Editor: the shell command under the file. */
+.ed-term {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 4px 4px;
+  padding: 7px 8px 7px 10px;
+  border-radius: 3px;
+  background: #15171b;
+  font: 400 12px var(--mono);
+}
+
+.term-cmd {
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  color: var(--ink);
+}
+
+.term-cmd span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.term-ps {
+  color: var(--dim-3);
+}
+
+.term-chip {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 2px;
+  font: 700 10px var(--font);
+  letter-spacing: 0.04em;
+  color: #0b0c0e;
+}
+
+.term-chip.running { background: var(--amber); }
+.term-chip.ok { background: var(--green-2); }
+.term-chip.fail { background: var(--red); }
+
+/* Before the first file: the latest steps in the same well. */
+.act-step {
+  height: 16px;
+  padding: 0 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 11px/16px var(--mono);
+  color: var(--dim-3);
+}
+
+.act-step:last-child {
+  color: #c9ced6;
 }

@@ -40,7 +40,8 @@ const EAR_X = 40;
 const EAR_Y = 16;
 const EAR_HB = 17;
 const CARD = { x: 10, y: 36, w: 620, h: 104 };
-const CARD_R = 20;
+/** Concentric with the island: its 22 px corner minus the 10 px inset. */
+const CARD_R = 12;
 const SMALL_W = COMPACT_W;
 const SMALL_H = NOTCH_H;
 

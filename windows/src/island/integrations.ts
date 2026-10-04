@@ -61,10 +61,14 @@ function handle(island: Island, update: IntegrationUpdate) {
       if (State.focusId !== update.id) {
         task.pillBadge = event.success ? "finished" : "error";
       }
-      Sound.play(event.success ? "finish" : "error");
       // Same as the Swift pollers: show the compact island so the badge is seen,
-      // but never steal the screen for a successful deploy.
-      island.reveal();
+      // but never steal the screen for a successful deploy — and never pop over a
+      // full-screen app at all; the badge is there when it ends.
+      void Bridge.canSummon().then((ok) => {
+        if (ok === false) return;
+        Sound.play(event.success ? "finish" : "error");
+        island.reveal();
+      });
 
       const existing = clearTimers.get(update.id);
       if (existing != null) window.clearTimeout(existing);

@@ -4,12 +4,14 @@
 
 import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
-import { Ticker } from "./ticker";
+import { Bridge } from "../core/bridge";
 import { State, type AgentTask } from "../core/state";
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
-import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
-import { buildChoose, buildUpload, buildUploading } from "./upload";
+import { buildCockpit } from "./cockpit";
+import { buildEditor } from "./editor";
+import { codeLines, miniLines } from "./code";
+import { buildUpload, buildUploading } from "./upload";
 import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
 
 export interface ViewActions {
@@ -26,6 +28,20 @@ export interface ViewActions {
   setAutoClose(seconds: number): void;
   openSettingsWindow(): void;
   blip(): void;
+  /** "Choose a file…" — the same swallow sequence as a drop, from a dialog. */
+  pickFile(): void;
+  /** Snip part of the screen; the snip arrives like a dropped file. */
+  snip(): void;
+  /** Nothing is waiting on the user any more: the island may auto-close again. */
+  releasePin(): void;
+  /** The chat is in use (typing, waiting for a reply): don't let the island auto-close. */
+  keepOpen(): void;
+  /** Makes the chat large, or back to its normal size. */
+  toggleChatSize(): void;
+  /** Starts a fresh chat with this prompt and sends it. */
+  ask(prompt: string): void;
+  /** Back to the terminal window of a session (folder as the fallback). */
+  focusSession(pids: number[], cwd: string | null): void;
 }
 
 export interface ViewHost {
@@ -35,6 +51,12 @@ export interface ViewHost {
   focus?(): void;
   /** Called every frame while the view is on screen. */
   tick?(nowMs: number): void;
+  /**
+   * True while `tick` still has an animation to finish. The island's frame
+   * loop stops when nothing moves, and a view animated from `tick` must keep it
+   * alive until it lands — or it freezes half-way.
+   */
+  animating?(): boolean;
 }
 
 // ── Shared pieces ─────────────────────────────────────────────────────────────
@@ -78,12 +100,15 @@ function stack(padLeft: number, padRight: number, ...children: Node[]): HTMLElem
 // ── Header ────────────────────────────────────────────────────────────────────
 
 export function buildHeader(actions: ViewActions): ViewHost {
-  const tabHome = h("button", { class: "tab", title: "Overview", onclick: () => go("overview") }, svg(ICONS.house, 13));
-  const tabChat = h("button", { class: "tab", title: "Ask", onclick: () => go("prompt") }, svg(ICONS.bubble, 13));
-  const tabDrop = h("button", { class: "tab", title: "Drop", onclick: () => go("upload") }, svg(ICONS.plus, 13));
+  const tabHome = h("button", { class: "tab", title: "Overview", onclick: () => go("overview") }, svg(ICONS.house, 13), h("span", { text: "Home" }));
+  const tabChat = h("button", { class: "tab", title: "Ask", onclick: () => go("prompt") }, svg(ICONS.bubble, 13), h("span", { text: "Chat" }));
+  const tabDrop = h("button", { class: "tab", title: "Drop", onclick: () => go("upload") }, svg(ICONS.plus, 13), h("span", { text: "File" }));
 
-  const gearBtn = h("button", { title: "Settings", onclick: () => go("settings") }, svg(ICONS.gear, 14));
-  const soundBtn = h("button", { title: "Mute", onclick: () => actions.toggleSound() }, svg(ICONS.speakerOn, 14));
+  const snipBtn = h("button", { title: "Snip (also copied to the clipboard)", onclick: () => actions.snip() }, svg(ICONS.hdrSnip, 15, { viewBox: 256 }));
+  const gearBtn = h("button", { title: "Settings", onclick: () => go("settings") }, svg(ICONS.hdrGear, 15, { viewBox: 256 }));
+  const soundBtn = h("button", { title: "Mute", onclick: () => actions.toggleSound() }, svg(ICONS.hdrSound, 15, { viewBox: 256 }));
+  // Only in the chat: shows it large so a long answer can be read comfortably.
+  const sizeBtn = h("button", { title: "Expand chat", onclick: () => actions.toggleChatSize() }, svg(ICONS.hdrExpand, 15, { viewBox: 256 }));
 
   function go(v: IslandViewName) {
     actions.blip();
@@ -94,21 +119,26 @@ export function buildHeader(actions: ViewActions): ViewHost {
     "div",
     { id: "header" },
     h("div", { class: "tabs" }, tabHome, tabChat, tabDrop),
-    h("div", { class: "header-actions" }, gearBtn, soundBtn),
+    h("div", { class: "header-actions" }, sizeBtn, snipBtn, gearBtn, soundBtn),
   );
 
   return {
     el,
     sync() {
       const v = State.view;
-      tabHome.classList.toggle("on", v === "overview" || v === "empty");
+      tabHome.classList.toggle("on", v === "overview" || v === "empty" || v === "editor");
       tabChat.classList.toggle("on", v === "prompt");
       tabDrop.classList.toggle("on", v === "upload");
       gearBtn.classList.toggle("on", v === "settings");
       clear(gearBtn);
-      gearBtn.append(svg(v === "settings" ? ICONS.gearFill : ICONS.gear, 14));
+      gearBtn.append(svg(ICONS.hdrGear, 15, { viewBox: 256 }));
       clear(soundBtn);
-      soundBtn.append(svg(State.settings.soundEnabled ? ICONS.speakerOn : ICONS.speakerOff, 14));
+      soundBtn.append(svg(State.settings.soundEnabled ? ICONS.hdrSound : ICONS.hdrMute, 15, { viewBox: 256 }));
+      sizeBtn.style.display = v === "prompt" ? "" : "none";
+      clear(sizeBtn);
+      sizeBtn.append(svg(State.chatExpanded ? ICONS.hdrShrink : ICONS.hdrExpand, 15, { viewBox: 256 }));
+      sizeBtn.title = State.chatExpanded ? "Shrink chat" : "Expand chat";
+      sizeBtn.classList.toggle("on", State.chatExpanded);
       el.style.opacity = v === "confused" ? "0" : "1";
     },
   };
@@ -117,9 +147,13 @@ export function buildHeader(actions: ViewActions): ViewHost {
 // ── Overview ──────────────────────────────────────────────────────────────────
 
 function buildOverview(actions: ViewActions): ViewHost {
-  const ticker = new Ticker();
-  const who = h("div", { class: "who" });
-  const tickerBody = h("div", { class: "card-body" }, who, ticker.el);
+  // The card: who, the file (or latest tool) and a few lines of it.
+  const actWho = h("div", { class: "who" });
+  const actLine = h("div", { class: "act-line" });
+  const actCode = h("div", { class: "act-code" });
+  const activityBody = h("div", { class: "card-body act", title: "Open the editor", onclick: () => { if (!State.focusTask?.activity && !State.focusTask?.shell) return; actions.blip(); actions.setView("editor"); } },
+    actWho, actLine, actCode);
+  let actKey = "";
   const leftBody = h("div", { class: "left-body" });
   const jump = h(
     "button",
@@ -127,18 +161,17 @@ function buildOverview(actions: ViewActions): ViewHost {
     svg(ICONS.arrowUpRight, 8),
   );
   const left = card(null, leftBody, jump);
-  const pills = h("div", { class: "pills" });
-  const right = card(null, pills);
+  const cockpit = buildCockpit(actions);
+  const right = card(null, cockpit.el);
 
   const el = h("div", { class: "view overview" },
     h("div", { class: "left" }, left),
     h("div", { class: "right" }, right),
   );
 
-  let pillIds = "";
   let detailOpen = false;
   let lastFocus: string | null = null;
-  let mode: "ticker" | "card" | null = null;
+  let mode: "activity" | "card" | null = null;
   let cardKey = "";
 
   const hooks: IntegrationCardHooks = {
@@ -160,9 +193,6 @@ function buildOverview(actions: ViewActions): ViewHost {
 
   return {
     el,
-    tick(nowMs: number) {
-      if (mode === "ticker") ticker.tick(nowMs);
-    },
     sync() {
       const task = State.focusTask;
       if (task?.id !== lastFocus) {
@@ -178,25 +208,59 @@ function buildOverview(actions: ViewActions): ViewHost {
         task?.id === "integration_claude" && (task.state !== "idle" || task.steps.length > 0);
 
       if (task && sessionActive) {
-        if (mode !== "ticker") {
+        const activity = task.activity;
+        if (mode !== "activity") {
           clear(leftBody);
-          leftBody.append(tickerBody);
-          mode = "ticker";
+          leftBody.append(activityBody);
+          mode = "activity";
           cardKey = "";
+          actKey = "";
         }
-        clear(who);
-        who.append(
+        clear(actWho);
+        actWho.append(
           dot(task.color, 7),
           h("span", { class: "name", text: task.name }),
           h("span", { class: "tool", text: task.source === "claudeCode" ? "Claude Code" : "n8n" }),
         );
         if (task.steps.length > 1) {
-          who.append(h("span", {
+          actWho.append(h("span", {
             class: "count",
             text: `${Math.min(task.stepIndex + 1, task.steps.length)}/${task.steps.length}`,
           }));
         }
-        ticker.sync(task);
+        // The new card is always the one shown: with a file it carries the file
+        // and its lines, before the first file it carries the latest steps.
+        const sh = task.shell?.status === "running" ? task.shell.command : "";
+        const recent = task.steps.slice(-3);
+        const k = activity
+          ? `${activity.seq}~${activity.numbered}~${activity.lines.length}~${sh}`
+          : `steps~${recent.join("|")}~${sh}`;
+        if (k !== actKey) {
+          actKey = k;
+          clear(actLine);
+          clear(actCode);
+          if (activity) {
+            actLine.append(
+              svg(ICONS.doc, 12),
+              h("b", { text: sh ? "Bash" : activity.verb }),
+              h("span", { class: "act-path", text: sh || activity.rel }),
+            );
+            const lines = miniLines(activity);
+            actCode.append(
+              lines.length
+                ? codeLines(lines, activity.lang)
+                : h("div", { class: "ed-empty", text: `${activity.verb === "Read" ? "Reading" : "Working on"} ${activity.name}…` }),
+            );
+          } else {
+            const last = task.log?.at(-1);
+            actLine.append(
+              svg(ICONS.doc, 12),
+              h("b", { text: sh ? "Bash" : last?.verb ?? "Working" }),
+              h("span", { class: "act-path", text: sh || last?.target || "" }),
+            );
+            for (const step of recent.length ? recent : ["…"]) actCode.append(h("div", { class: "act-step", text: step }));
+          }
+        }
       } else if (task) {
         const info = State.integrations[task.id];
         const key = [
@@ -214,58 +278,9 @@ function buildOverview(actions: ViewActions): ViewHost {
 
       jump.style.display = detailOpen ? "none" : "";
 
-      const others = State.otherTasks.slice(0, 4);
-      const pillKey = others.map((t) => `${t.id}:${t.pillBadge ?? ""}`).join("|");
-      if (pillKey !== pillIds) {
-        pillIds = pillKey;
-        clear(pills);
-        for (const t of others) pills.append(buildPill(t, actions));
-        pruneMiniBots();
-      }
+      cockpit.sync();
     },
   };
-}
-
-function buildPill(task: AgentTask, actions: ViewActions): HTMLElement {
-  const label = task.id === "integration_claude" ? "VS Code" : task.name;
-  const canvas = createMiniBot(task, 24);
-  const pill = h(
-    "div",
-    { class: "pill", onclick: () => actions.setFocus(task.id) },
-    canvas,
-    h("span", { class: "lbl", text: label }),
-  );
-  pill.style.borderColor = `${task.color}24`;
-  pill.addEventListener("mouseenter", () => {
-    pill.style.background = `${task.color}2e`;
-    pill.style.borderColor = `${task.color}8c`;
-    pill.style.boxShadow = `0 2px 10px ${task.color}59`;
-    (pill.querySelector(".lbl") as HTMLElement).style.color = lighten(task.color, 0.3);
-  });
-  pill.addEventListener("mouseleave", () => {
-    pill.style.background = "";
-    pill.style.borderColor = `${task.color}24`;
-    pill.style.boxShadow = "";
-    (pill.querySelector(".lbl") as HTMLElement).style.color = "";
-  });
-
-  if (task.pillBadge) {
-    const colors = { approval: "#F5A524", finished: "#22C55E", error: "#F4505E" } as const;
-    const icons = { approval: ICONS.bang, finished: ICONS.check, error: ICONS.xmark } as const;
-    const inner = h("i", { style: `background:${colors[task.pillBadge]}` }, svg(icons[task.pillBadge], 6, { stroke: task.pillBadge === "finished" ? 3 : 0 }));
-    const badge = h("div", { class: "pill-badge" }, inner);
-    badge.style.boxShadow = `0 0 4px ${colors[task.pillBadge]}99`;
-    pill.append(badge);
-  }
-  return pill;
-}
-
-function lighten(hex: string, amount: number): string {
-  const v = parseInt(hex.replace("#", ""), 16);
-  const c = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((x) =>
-    Math.min(255, Math.round(x + amount * 255)),
-  );
-  return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
 // ── Empty ─────────────────────────────────────────────────────────────────────
@@ -469,6 +484,108 @@ function buildSettings(actions: ViewActions): ViewHost {
   };
 }
 
+// ── Guide ─────────────────────────────────────────────────────────────────────
+
+/** Mochi walking the user through a task, one step at a time. */
+function buildGuide(actions: ViewActions): ViewHost {
+  const who = h("div", { class: "who-row" });
+  const text = h("div", { class: "title guide-step" });
+  const back = btn("Back", "secondary", () => move(-1));
+  const next = btn("Next", "primary", () => move(1));
+  const done = btn("Done", "primary", () => {
+    actions.blip();
+    void Bridge.guideClear();
+    State.guide = null;
+    actions.releasePin();
+    actions.setView(State.defaultView());
+  });
+  const open = h("button", {
+    class: "link-btn guide-open",
+    text: "Open page",
+    onclick: () => {
+      if (State.guide?.page) void Bridge.openWindowsSettings(State.guide.page);
+    },
+  });
+  const check = btn("Check", "secondary", () => {
+    const g = State.guide;
+    if (!g || g.check?.busy) return;
+    actions.blip();
+    const at = g.index;
+    g.check = { busy: true };
+    State.notify();
+    // The screenshot goes to the model only from this click.
+    Bridge.guideCheck(g.title, g.steps[at] ?? "").then(
+      (r) => {
+        if (State.guide === g && g.index === at) g.check = { busy: false, done: r?.done ?? false, hint: r?.hint ?? "Couldn't check." };
+        State.notify();
+      },
+      (err) => {
+        if (State.guide === g && g.index === at) g.check = { busy: false, done: false, hint: String(err) };
+        State.notify();
+      },
+    );
+  });
+  const show = btn("Show me", "secondary", () => {
+    const g = State.guide;
+    if (!g || g.check?.busy) return;
+    actions.blip();
+    const at = g.index;
+    g.check = { busy: true };
+    State.notify();
+    // Same as Check: the screenshot goes to the model only from this click.
+    Bridge.guideLocate(g.title, g.steps[at] ?? "").then(
+      (r) => {
+        if (State.guide === g && g.index === at) {
+          g.check = { busy: false, done: r?.found ?? false, hint: r?.found ? (r.label ? `Orange ring: ${r.label}` : "Look for the orange ring.") : "Nothing to point at on this screen." };
+        }
+        State.notify();
+      },
+      (err) => {
+        if (State.guide === g && g.index === at) g.check = { busy: false, done: false, hint: String(err) };
+        State.notify();
+      },
+    );
+  });
+  // Built once: rebuilding buttons between a mouse-down and a mouse-up would
+  // swallow the click (same reason as the approval card).
+  const row = h("div", { class: "actions" }, back, show, check, next, done, open);
+
+  function move(by: number) {
+    const g = State.guide;
+    if (!g) return;
+    g.check = null;
+    void Bridge.guideClear();
+    g.index = Math.max(0, Math.min(g.steps.length - 1, g.index + by));
+    actions.blip();
+    State.notify();
+  }
+
+  return {
+    el: h("div", { class: "view" }, card("cyan", stack(116, 16, who, text, row))),
+    sync() {
+      const g = State.guide;
+      if (!g) return;
+      clear(who);
+      who.append(h("span", { class: "n", text: g.title }));
+      const c = g.check;
+      if (c?.busy) {
+        who.append(h("span", { text: "Looking at your screen…" }));
+      } else if (c) {
+        who.append(h("span", { class: c.done ? "guide-ok" : "guide-no", text: c.hint ?? "" }));
+      } else {
+        who.append(h("span", { text: `Step ${g.index + 1} of ${g.steps.length}` }));
+      }
+      check.style.opacity = show.style.opacity = c?.busy ? "0.5" : "";
+      text.textContent = g.steps[g.index] ?? "";
+      const last = g.index >= g.steps.length - 1;
+      back.style.display = g.index > 0 ? "" : "none";
+      next.style.display = last ? "none" : "";
+      done.style.display = last ? "" : "none";
+      open.style.display = g.page ? "" : "none";
+    },
+  };
+}
+
 // ── Placeholders filled in later stages ───────────────────────────────────────
 
 function buildPlaceholder(title: string, sub: string): ViewHost {
@@ -489,6 +606,7 @@ export function buildViews(
 ): Map<IslandViewName, ViewHost> {
   const map = new Map<IslandViewName, ViewHost>();
   map.set("overview", buildOverview(actions));
+  map.set("editor", buildEditor(actions));
   map.set("empty", buildEmpty(actions));
   map.set("approval", buildApproval(actions));
   map.set("question", buildQuestion());
@@ -496,11 +614,11 @@ export function buildViews(
   map.set("finished", buildFinished(actions));
   map.set("confused", buildConfused());
   map.set("note", buildNote());
+  map.set("guide", buildGuide(actions));
   map.set("settings", buildSettings(actions));
-  map.set("prompt", buildPrompt(onChatHeightChange));
-  map.set("upload", buildUpload());
+  map.set("prompt", buildPrompt(onChatHeightChange, () => actions.releasePin(), () => actions.keepOpen()));
+  map.set("upload", buildUpload(actions));
   map.set("uploading", buildUploading());
-  map.set("choose", buildChoose(actions));
   // Not in the Windows v1: sending a file by email, window attach + web result.
   map.set("mail", buildPlaceholder("Sending by email isn't in this version.", ""));
   map.set("searching", buildPlaceholder("Claude is searching…", ""));

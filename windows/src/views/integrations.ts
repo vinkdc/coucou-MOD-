@@ -69,8 +69,9 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
       h("button", {
         class: "link-btn",
         style: `color:${task.color}b3`,
-        text: "Open Visual Studio Code",
-        onclick: () => void Bridge.openInVSCode(task.sessionCwd ?? null),
+        // No editor open: the session's folder instead.
+        text: State.ide ? `Open ${State.ide.label}` : "Open folder",
+        onclick: () => void Bridge.openInVSCode(task.sessionCwd ?? null, State.ide?.id ?? "none"),
       }),
     );
   } else if (task.id === "integration_n8n") {
@@ -110,7 +111,7 @@ function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
   return h(
     "div",
     { class: "int-card" },
-    header(task.color, task.id === "integration_claude" ? "VS Code" : task.name, "Integration"),
+    header(task.color, task.id === "integration_claude" ? State.ideLabel : task.name, "Integration"),
     h("div", { class: "int-status" }, dot(statusColor, 5), h("span", { text: label })),
     actions,
   );

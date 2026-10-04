@@ -1,0 +1,485 @@
+/* Skin editor — same palette and type as the Settings window. Surfaces are
+   separated by fill and spacing, never by light borders. */
+
+:root {
+  color-scheme: dark;
+  --font: "Inter Variable", system-ui, "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --ink: #f5f6f8;
+  --dim: #9398a1;
+  --dim-2: #6b7079;
+  --bg: #0b0c0e;
+  --card: #141518;
+  --well: #0e0f11;
+  --fill: rgba(255, 255, 255, 0.07);
+  --fill-2: rgba(255, 255, 255, 0.12);
+  --blue: #63b3ff;
+  --green: #22c55e;
+  --red: #f4505e;
+  /* Concentric corners: panel 14, its rows (8 px in) 6. */
+  --panel-radius: 14px;
+  --row-radius: 6px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body.skin-editor {
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 13px/1.45 var(--font);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+#editor-root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+button {
+  font: 500 12.5px var(--font);
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.14s, transform 0.08s;
+  white-space: nowrap;
+}
+
+button:hover:not(:disabled) {
+  background: var(--fill-2);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+button.primary {
+  background: var(--ink);
+  color: #0b0c0e;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #fff;
+}
+
+button.small {
+  padding: 5px 11px;
+  font-size: 12px;
+}
+
+button.icon {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  background: transparent;
+  color: var(--dim);
+}
+
+button.icon:hover:not(:disabled) {
+  background: var(--fill);
+  color: var(--ink);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+input,
+textarea,
+select {
+  font: 400 13px var(--font);
+  color: var(--ink);
+  background: var(--fill);
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  outline: none;
+  user-select: text;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  background: var(--fill-2);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.45;
+}
+
+input[type="color"] {
+  width: 40px;
+  height: 28px;
+  padding: 2px;
+  cursor: pointer;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--blue);
+}
+
+.hint {
+  font: 400 12px/1.45 var(--font);
+  color: var(--dim);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+/* ── Top bar ─────────────────────────────────────────────────────────────── */
+
+.top {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+}
+
+.top .title {
+  font: 600 15px var(--font);
+  letter-spacing: -0.01em;
+  margin-right: 8px;
+}
+
+.top .name {
+  width: 220px;
+  font-weight: 600;
+}
+
+.top select {
+  max-width: 220px;
+}
+
+/* ── Body: side, canvas, preview ─────────────────────────────────────────── */
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+  padding: 0 10px 10px;
+}
+
+.side {
+  flex: 0 0 300px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 2px;
+}
+
+.panel {
+  background: var(--card);
+  border-radius: var(--panel-radius);
+  padding: 4px 8px 8px;
+}
+
+.panel > summary {
+  list-style: none;
+  cursor: pointer;
+  font: 600 13px var(--font);
+  padding: 8px 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel > summary::before {
+  content: "▸";
+  color: var(--dim-2);
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.panel[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px 6px 6px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field > label {
+  font: 500 12px var(--font);
+  color: var(--dim);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: var(--row-radius);
+  cursor: pointer;
+}
+
+.item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.item.on {
+  background: rgba(99, 179, 255, 0.14);
+}
+
+.item canvas {
+  flex: 0 0 auto;
+  border-radius: 4px;
+  background: var(--well);
+}
+
+.item-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.item-name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.seg button {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.seg button.on {
+  background: rgba(99, 179, 255, 0.22);
+  color: #cfe6ff;
+}
+
+.moods {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.mood {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: var(--row-radius);
+  background: var(--well);
+  cursor: pointer;
+  font-size: 12px;
+  min-height: 44px;
+}
+
+.mood:hover {
+  background: #15171b;
+}
+
+.mood.on {
+  background: rgba(196, 139, 255, 0.16);
+}
+
+.mood .plus {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--fill);
+  color: var(--dim);
+  font-size: 16px;
+}
+
+.mood canvas {
+  flex: 0 0 auto;
+  border-radius: 4px;
+}
+
+.mood span {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.mood .icon {
+  width: 20px;
+  height: 20px;
+}
+
+body.dragging .mood {
+  background: rgba(196, 139, 255, 0.1);
+}
+
+/* Canvas */
+
+.canvas-area {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border-radius: var(--panel-radius);
+  overflow: hidden;
+}
+
+.stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.stage canvas {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+
+body.dragging .canvas-area {
+  background: #16202c;
+}
+
+.drop-note {
+  position: absolute;
+  inset: 0 0 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  padding: 40px;
+  pointer-events: none;
+}
+
+.drop-note > * {
+  max-width: 420px;
+}
+
+.drop-note button {
+  pointer-events: auto;
+}
+
+.drop-title {
+  font: 600 16px var(--font);
+}
+
+.stage-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--well);
+}
+
+.stage-hint {
+  font-size: 12px;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Preview */
+
+.right {
+  flex: 0 0 264px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--card);
+  border-radius: var(--panel-radius);
+  overflow-y: auto;
+}
+
+.right-title {
+  font: 600 13px var(--font);
+}
+
+.preview-canvas {
+  align-self: center;
+  border-radius: 10px;
+  background: #000;
+  padding: 4px 6px;
+}
+
+.preview-canvas canvas {
+  display: block;
+}
+
+.preview-status:empty {
+  display: none;
+}
+
+.moods-play {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.status {
+  font-size: 12.5px;
+  color: var(--dim);
+  line-height: 1.4;
+}
+
+.status.ok {
+  color: #86efac;
+}
+
+.status.err {
+  color: #ff8d97;
+}
