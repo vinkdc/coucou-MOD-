@@ -18,10 +18,10 @@ export interface KeyAction {
 export const KEY_ACTIONS: readonly KeyAction[] = [
   { id: "island.close", scope: "island", what: "Close the island", default: "Esc" },
   {
-    id: "tab.prev", scope: "island", what: "Previous tab (Home, Chat, File)", default: "Left",
+    id: "tab.prev", scope: "island", what: "Previous tab (Today, Ask, Review, Progress)", default: "Left",
     note: "Click the island first so it has the keyboard. A plain key only works while the chat's message box is empty.",
   },
-  { id: "tab.next", scope: "island", what: "Next tab (Home, Chat, File)", default: "Right" },
+  { id: "tab.next", scope: "island", what: "Next tab (Today, Ask, Review, Progress)", default: "Right" },
   { id: "chat.send", scope: "island", what: "Send your message in the chat", default: "Enter" },
   { id: "editor.undo", scope: "editor", what: "Undo", default: "Ctrl+Z" },
   { id: "editor.redo", scope: "editor", what: "Redo", default: "Ctrl+Y", note: "Ctrl+Shift+Z always redoes too." },

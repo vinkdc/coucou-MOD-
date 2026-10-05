@@ -6,10 +6,6 @@
       "deb",
       "rpm"
     ],
-    "resources": {
-      "../target/release/coucou-hook.exe": null,
-      "../target/release/coucou-hook": "coucou-hook"
-    },
     "linux": {
       "appimage": {
         "bundleMediaFramework": true
@@ -30,7 +26,7 @@
     "windows": [
       {
         "label": "island",
-        "title": "Coucou",
+        "title": "Mochi",
         "url": "index.html",
         "width": 240,
         "height": 6,
@@ -46,7 +42,7 @@
         "maximizable": false,
         "minimizable": false,
         "closable": false,
-        "dragDropEnabled": true,
+        "dragDropEnabled": false,
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
       }
     ]

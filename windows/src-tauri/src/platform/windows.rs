@@ -6,17 +6,11 @@ use std::process::Command;
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 
-use ::windows::core::{BOOL, PWSTR};
-use ::windows::Win32::Foundation::{CloseHandle, HANDLE, HLOCAL, HWND, LPARAM, LocalFree, POINT};
-use ::windows::Win32::Security::Authorization::ConvertSidToStringSidW;
-use ::windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER};
+use ::windows::core::BOOL;
+use ::windows::Win32::Foundation::{HWND, LPARAM, POINT};
 use ::windows::Win32::System::Ole::RevokeDragDrop;
 use ::windows::Win32::System::SystemInformation::GetLocalTime;
-use ::windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-use ::windows::Win32::UI::Input::KeyboardAndMouse::{
-    keybd_event, GetAsyncKeyState, KEYEVENTF_KEYUP, VK_LBUTTON, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE,
-    VK_MEDIA_PREV_TRACK, VK_MEDIA_STOP, VK_VOLUME_DOWN, VK_VOLUME_MUTE, VK_VOLUME_UP,
-};
+use ::windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
 use ::windows::Win32::UI::WindowsAndMessaging::{
     EnumChildWindows, GetClassNameW, GetCursorPos, GetWindowLongPtrW, SetWindowLongPtrW,
     GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
@@ -25,10 +19,8 @@ use ::windows::Win32::UI::WindowsAndMessaging::{
 use super::LocalTime;
 use crate::island::WINDOW_LABEL;
 
-/// File name of the Claude Code relay.
-pub const HOOK_EXE: &str = "coucou-hook.exe";
-
 /// Environment variable holding the home directory.
+#[allow(dead_code)]
 pub const HOME_VAR: &str = "USERPROFILE";
 
 /// Keeps spawned helpers from flashing a console window.
@@ -36,20 +28,20 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 // ── Files ─────────────────────────────────────────────────────────────────────
 
-/// %APPDATA%\Coucou — preferences.
+/// %APPDATA%\Kotoba — preferences and learner progress.
 pub fn config_dir() -> PathBuf {
     let base = std::env::var_os("APPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    base.join("Coucou")
+    base.join("Kotoba")
 }
 
-/// %LOCALAPPDATA%\Coucou — where coucou-hook.exe, the inbox and the log live.
+/// %LOCALAPPDATA%\Kotoba — the voice cache and the log.
 pub fn local_dir() -> PathBuf {
     let base = std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    base.join("Coucou")
+    base.join("Kotoba")
 }
 
 /// %APPDATA% and %LOCALAPPDATA% are already private to the user.
@@ -84,252 +76,12 @@ pub fn open_url(url: &str) {
         .spawn();
 }
 
-pub fn reveal_folder(path: &str) {
-    let _ = Command::new("explorer").arg(path).spawn();
-}
-
-/// "Open terminal": brings back the window a Claude Code session runs in.
-/// `pids` is the session's process chain, nearest first (Claude Code, its
-/// shell, the terminal…); the first one that owns a visible top-level window —
-/// Windows Terminal, VS Code, a console — is restored and brought to the front.
-pub fn focus_process_window(pids: &[u32]) -> bool {
-    use ::windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_MENU,
-    };
-    use ::windows::Win32::UI::WindowsAndMessaging::{
-        BringWindowToTop, EnumWindows, GetForegroundWindow, GetWindow, GetWindowTextLengthW,
-        GetWindowThreadProcessId, IsIconic, IsWindowVisible, SetForegroundWindow, ShowWindow,
-        GW_OWNER, SW_RESTORE,
-    };
-
-    struct Search {
-        pids: Vec<u32>,
-        found: Vec<(u32, HWND)>,
-    }
-    unsafe extern "system" fn visit(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        let search = &mut *(lparam.0 as *mut Search);
-        let mut pid = 0u32;
-        GetWindowThreadProcessId(hwnd, Some(&mut pid));
-        // A real app window: visible, top-level (no owner), with a title — and
-        // not the shell's own desktop or taskbar. The chain ends at
-        // explorer.exe, so when the terminal itself is gone the walk reaches
-        // it, and "focusing" the desktop must not count as success.
-        let owned = GetWindow(hwnd, GW_OWNER).map(|o| !o.is_invalid()).unwrap_or(false);
-        let mut class = [0u16; 32];
-        let len = GetClassNameW(hwnd, &mut class) as usize;
-        let class = String::from_utf16_lossy(&class[..len.min(class.len())]);
-        let shell = matches!(class.as_str(), "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd");
-        if search.pids.contains(&pid)
-            && IsWindowVisible(hwnd).as_bool()
-            && !owned
-            && !shell
-            && GetWindowTextLengthW(hwnd) > 0
-        {
-            search.found.push((pid, hwnd));
-        }
-        true.into()
-    }
-
-    let mut search = Search { pids: pids.to_vec(), found: Vec::new() };
-    unsafe {
-        let _ = EnumWindows(Some(visit), LPARAM(&mut search as *mut Search as isize));
-    }
-    // Nearest process first: the window closest to the session wins.
-    let Some(hwnd) = pids
-        .iter()
-        .find_map(|p| search.found.iter().find(|(pid, _)| pid == p).map(|(_, h)| *h))
-    else {
-        return false;
-    };
-
-    unsafe {
-        if IsIconic(hwnd).as_bool() {
-            let _ = ShowWindow(hwnd, SW_RESTORE);
-        }
-        let _ = BringWindowToTop(hwnd);
-        if SetForegroundWindow(hwnd).as_bool() && GetForegroundWindow() == hwnd {
-            return true;
-        }
-        // Windows only lets the app that had the last input take the
-        // foreground, and the island never activates. A tap of Alt (what a
-        // user pressing Alt would do) lifts that lock for this one switch.
-        let key = |flags| INPUT {
-            r#type: INPUT_KEYBOARD,
-            Anonymous: INPUT_0 {
-                ki: KEYBDINPUT { wVk: VK_MENU, dwFlags: flags, ..Default::default() },
-            },
-        };
-        let taps = [key(Default::default()), key(KEYEVENTF_KEYUP)];
-        SendInput(&taps, std::mem::size_of::<INPUT>() as i32);
-        let _ = SetForegroundWindow(hwnd);
-    }
-    true
-}
-
-/// The assistant's `launch_app`: whatever the shell's "open" verb resolves —
-/// an exe on PATH, an App Paths entry (chrome, excel…), or a full path. No
-/// command line is built, so the name can't smuggle in arguments.
-pub fn launch_app(name: &str) -> Result<(), String> {
-    use ::windows::core::{w, HSTRING, PCWSTR};
-    use ::windows::Win32::UI::Shell::ShellExecuteW;
-    use ::windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-    if name.is_empty() {
-        return Err("No app given.".into());
-    }
-    let file = HSTRING::from(name);
-    let result = unsafe {
-        ShellExecuteW(None, w!("open"), &file, PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL)
-    };
-    // ShellExecute reports success as any value above 32.
-    if result.0 as isize > 32 {
-        Ok(())
-    } else {
-        Err(format!("Windows could not find or open \"{name}\"."))
-    }
-}
-
-/// The assistant's `run_command`: PowerShell, no profile, no prompts, and UTF-8
-/// output so non-ASCII text survives the pipe.
-pub fn shell_command(command: &str) -> Command {
-    let mut cmd = Command::new("powershell.exe");
-    cmd.args([
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        &format!("[Console]::OutputEncoding=[Text.Encoding]::UTF8; {command}"),
-    ]);
-    cmd
-}
-
-/// Ends a process and everything it started. `Child::kill` only ends the shell
-/// itself: a `git add .` it launched would carry on, unseen, long after the 60
-/// second limit had "stopped" the command.
-pub fn kill_tree(pid: u32) {
-    let mut cmd = Command::new("taskkill");
-    cmd.args(["/PID", &pid.to_string(), "/T", "/F"]);
-    let _ = no_console(&mut cmd).status();
-}
-
-/// The main display as packed RGB, in physical pixels.
-pub fn screenshot() -> Result<(u32, u32, Vec<u8>), String> {
-    use ::windows::Win32::Graphics::Gdi::{
-        BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
-        GetDIBits, ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
-        DIB_RGB_COLORS, SRCCOPY,
-    };
-    use ::windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
-
-    unsafe {
-        let w = GetSystemMetrics(SM_CXSCREEN);
-        let h = GetSystemMetrics(SM_CYSCREEN);
-        if w <= 0 || h <= 0 {
-            return Err("No display to capture.".into());
-        }
-        let screen = GetDC(None);
-        let mem = CreateCompatibleDC(Some(screen));
-        let bmp = CreateCompatibleBitmap(screen, w, h);
-        let old = SelectObject(mem, bmp.into());
-        let blit = BitBlt(mem, 0, 0, w, h, Some(screen), 0, 0, SRCCOPY);
-
-        let mut info = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: w,
-                biHeight: -h, // top-down rows
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let mut bgra = vec![0u8; (w * h * 4) as usize];
-        let lines = GetDIBits(
-            mem,
-            bmp,
-            0,
-            h as u32,
-            Some(bgra.as_mut_ptr().cast()),
-            &mut info,
-            DIB_RGB_COLORS,
-        );
-
-        SelectObject(mem, old);
-        let _ = DeleteObject(bmp.into());
-        let _ = DeleteDC(mem);
-        ReleaseDC(None, screen);
-
-        blit.map_err(|e| format!("Screen capture failed: {e}"))?;
-        if lines == 0 {
-            return Err("Screen capture failed.".into());
-        }
-        let mut rgb = Vec::with_capacity((w * h * 3) as usize);
-        for px in bgra.chunks_exact(4) {
-            rgb.extend_from_slice(&[px[2], px[1], px[0]]);
-        }
-        Ok((w as u32, h as u32, rgb))
-    }
-}
-
-/// Our own `where`: walks %PATH% against %PATHEXT%, no shell involved.
-/// Rust quotes arguments correctly for `.cmd`/`.bat` targets since 1.77, so
-/// spawning `code.cmd` directly is safe.
-pub fn find_on_path(stem: &str) -> Option<PathBuf> {
-    let exts = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
-    let dirs = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&dirs) {
-        for ext in exts.split(';').filter(|e| !e.is_empty()) {
-            let candidate = dir.join(format!("{stem}{}", ext.to_lowercase()));
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
-}
-
 // ── Who we are ────────────────────────────────────────────────────────────────
 //
 // Named pipes share one machine-wide namespace, so the SID in the name is what
 // keeps two accounts on the same machine from ever meeting on `coucou-*`.
 // coucou-hook computes the same string (hook/src/win.rs) and additionally checks
 // that the process serving the pipe really is us.
-
-/// The SID of the account this process runs as, as `S-1-5-21-…`.
-pub fn current_user_sid() -> Option<String> {
-    unsafe {
-        let mut token = HANDLE::default();
-        OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).ok()?;
-
-        // First call sizes the buffer, second fills it.
-        let mut needed = 0u32;
-        let _ = GetTokenInformation(token, TokenUser, None, 0, &mut needed);
-        if needed == 0 {
-            let _ = CloseHandle(token);
-            return None;
-        }
-        let mut buf = vec![0u8; needed as usize];
-        let ok = GetTokenInformation(
-            token,
-            TokenUser,
-            Some(buf.as_mut_ptr().cast()),
-            needed,
-            &mut needed,
-        )
-        .is_ok();
-        let _ = CloseHandle(token);
-        if !ok {
-            return None;
-        }
-
-        let user = &*(buf.as_ptr() as *const TOKEN_USER);
-        let mut text = PWSTR::null();
-        ConvertSidToStringSidW(user.User.Sid, &mut text).ok()?;
-        let sid = text.to_string().ok();
-        let _ = LocalFree(Some(HLOCAL(text.0 as *mut _)));
-        sid
-    }
-}
 
 // ── Cursor ────────────────────────────────────────────────────────────────────
 
@@ -343,33 +95,168 @@ pub fn cursor_physical() -> Option<(f64, f64)> {
     Some((p.x as f64, p.y as f64))
 }
 
-/// True while the left mouse button is held — the only signal we get that a
-/// drag might be in flight before it reaches the window.
-/// Presses a media key, as the keyboard's own would: whatever is playing (the
-/// Spotify tab in a browser, a player app) answers, and nothing gets opened.
-pub fn media_key(action: &str, times: u32) -> Result<(), String> {
-    let vk = match action {
-        "play_pause" => VK_MEDIA_PLAY_PAUSE,
-        "next" => VK_MEDIA_NEXT_TRACK,
-        "previous" => VK_MEDIA_PREV_TRACK,
-        "stop" => VK_MEDIA_STOP,
-        "volume_up" => VK_VOLUME_UP,
-        "volume_down" => VK_VOLUME_DOWN,
-        "mute" => VK_VOLUME_MUTE,
-        other => return Err(format!("Unknown media action {other}.")),
-    };
-    for _ in 0..times.clamp(1, 25) {
-        // SAFETY: plain key events with no pointers; the virtual-key codes are valid.
-        unsafe {
-            keybd_event(vk.0 as u8, 0, Default::default(), 0);
-            keybd_event(vk.0 as u8, 0, KEYEVENTF_KEYUP, 0);
-        }
-    }
-    Ok(())
-}
-
 pub fn left_button_down() -> bool {
     unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0 }
+}
+
+// ── Selected text ─────────────────────────────────────────────────────────────
+
+const CF_UNICODETEXT: u32 = 13;
+
+/// The text on the clipboard, if it holds any.
+fn clipboard_text() -> Option<String> {
+    use ::windows::Win32::Foundation::{HANDLE, HGLOBAL};
+    use ::windows::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard};
+    use ::windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+
+    unsafe {
+        IsClipboardFormatAvailable(CF_UNICODETEXT).ok()?;
+        // Another app may hold the clipboard for a moment right after copying.
+        let mut opened = false;
+        for _ in 0..10 {
+            if OpenClipboard(None).is_ok() {
+                opened = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        if !opened {
+            return None;
+        }
+        let result = (|| {
+            let handle: HANDLE = GetClipboardData(CF_UNICODETEXT).ok()?;
+            let global = HGLOBAL(handle.0);
+            let ptr = GlobalLock(global) as *const u16;
+            if ptr.is_null() {
+                return None;
+            }
+            let units = GlobalSize(global) / 2;
+            // Copied out before unlocking: the clipboard owns this memory.
+            let mut buf = std::slice::from_raw_parts(ptr, units).to_vec();
+            let _ = GlobalUnlock(global);
+            if let Some(end) = buf.iter().position(|&c| c == 0) {
+                buf.truncate(end);
+            }
+            Some(String::from_utf16_lossy(&buf))
+        })();
+        let _ = CloseClipboard();
+        result
+    }
+}
+
+/// True when the clipboard holds something that is not text (a picture, files…):
+/// overwriting it with a copy would lose what the user put there.
+fn clipboard_has_other_data() -> bool {
+    use ::windows::Win32::System::DataExchange::{CountClipboardFormats, IsClipboardFormatAvailable};
+    unsafe { CountClipboardFormats() > 0 && IsClipboardFormatAvailable(CF_UNICODETEXT).is_err() }
+}
+
+fn set_clipboard_text(text: &str) -> bool {
+    use ::windows::Win32::Foundation::{HANDLE, HGLOBAL};
+    use ::windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
+    use ::windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+
+    let mut wide: Vec<u16> = text.encode_utf16().collect();
+    wide.push(0);
+    unsafe {
+        if OpenClipboard(None).is_err() {
+            return false;
+        }
+        let ok = (|| {
+            EmptyClipboard().ok()?;
+            let global: HGLOBAL = GlobalAlloc(GMEM_MOVEABLE, wide.len() * 2).ok()?;
+            let ptr = GlobalLock(global) as *mut u16;
+            if ptr.is_null() {
+                return None;
+            }
+            std::ptr::copy_nonoverlapping(wide.as_ptr(), ptr, wide.len());
+            let _ = GlobalUnlock(global);
+            // The clipboard owns the memory once SetClipboardData succeeds.
+            SetClipboardData(CF_UNICODETEXT, Some(HANDLE(global.0))).ok()?;
+            Some(())
+        })()
+        .is_some();
+        let _ = CloseClipboard();
+        ok
+    }
+}
+
+fn key_down(vk: u16) -> bool {
+    unsafe { (GetAsyncKeyState(vk as i32) as u16 & 0x8000) != 0 }
+}
+
+/// Sends Ctrl+C to whatever has the keyboard.
+fn send_copy() {
+    use ::windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VIRTUAL_KEY,
+    };
+    let key = |vk: u16, up: bool| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: VIRTUAL_KEY(vk),
+                wScan: 0,
+                dwFlags: if up { KEYEVENTF_KEYUP } else { KEYBD_EVENT_FLAGS(0) },
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+    const CONTROL: u16 = 0x11;
+    const C: u16 = 0x43;
+    let inputs = [key(CONTROL, false), key(C, false), key(C, true), key(CONTROL, true)];
+    // SAFETY: `inputs` is a valid array of fully initialised INPUT structs.
+    unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+}
+
+/// The text selected in whatever app is in front.
+///
+/// The hotkey was pressed with modifiers held, so those come up first (a Ctrl+Alt
+/// still down would turn the copy into Ctrl+Alt+C). Then Ctrl+C is sent and the
+/// clipboard read; the previous text is put back afterwards. A clipboard holding
+/// something other than text is never touched: the user is asked to copy first.
+/// If the app ignores Ctrl+C (nothing selected), the text already on the
+/// clipboard is used.
+pub fn selected_text() -> Result<String, String> {
+    use ::windows::Win32::System::DataExchange::GetClipboardSequenceNumber;
+    const MODIFIERS: [u16; 5] = [0x11, 0x12, 0x10, 0x5B, 0x5C]; // Ctrl, Alt, Shift, LWin, RWin
+
+    for _ in 0..40 {
+        if !MODIFIERS.iter().any(|&vk| key_down(vk)) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let previous = clipboard_text();
+    if previous.is_none() && clipboard_has_other_data() {
+        return Err("Your clipboard holds a picture or files, so I won't overwrite it. Copy the text with Ctrl+C, then press the shortcut again.".into());
+    }
+    let before = unsafe { GetClipboardSequenceNumber() };
+    send_copy();
+    let mut copied = false;
+    for _ in 0..25 {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        if unsafe { GetClipboardSequenceNumber() } != before {
+            copied = true;
+            break;
+        }
+    }
+    let selected = if copied { clipboard_text() } else { None };
+    if copied {
+        // The user's own clipboard comes back; only the lookup saw the selection.
+        match &previous {
+            Some(text) => {
+                set_clipboard_text(text);
+            }
+            None => {
+                set_clipboard_text("");
+            }
+        }
+    }
+    match selected.or(previous).map(|t| t.trim().to_string()) {
+        Some(t) if !t.is_empty() => Ok(t),
+        _ => Err("Nothing is selected. Select some text, then press the shortcut.".into()),
+    }
 }
 
 // ── Island window ─────────────────────────────────────────────────────────────
@@ -415,72 +302,6 @@ unsafe extern "system" fn revoke_render_widget(hwnd: HWND, _: LPARAM) -> BOOL {
     true.into()
 }
 
-/// Bumps every time anything is copied, by any app. Cheap: a counter read.
-pub fn clipboard_sequence() -> u32 {
-    unsafe { ::windows::Win32::System::DataExchange::GetClipboardSequenceNumber() }
-}
-
-/// The picture on the clipboard, if there is one, as RGB8 top row first.
-pub fn clipboard_image() -> Option<(u32, u32, Vec<u8>)> {
-    use ::windows::Win32::Foundation::HGLOBAL;
-    use ::windows::Win32::System::DataExchange::{
-        CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
-    };
-    use ::windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
-    use ::windows::Win32::System::Ole::CF_DIB;
-
-    unsafe {
-        if IsClipboardFormatAvailable(CF_DIB.0 as u32).is_err() {
-            return None;
-        }
-        // Another app may hold the clipboard for a moment right after copying.
-        let mut opened = false;
-        for _ in 0..10 {
-            if OpenClipboard(None).is_ok() {
-                opened = true;
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(30));
-        }
-        if !opened {
-            return None;
-        }
-        let result = (|| {
-            let handle = GetClipboardData(CF_DIB.0 as u32).ok()?;
-            let global = HGLOBAL(handle.0);
-            let ptr = GlobalLock(global) as *const u8;
-            if ptr.is_null() {
-                return None;
-            }
-            let len = GlobalSize(global);
-            // Copied out before unlocking: the clipboard owns this memory.
-            let bytes = std::slice::from_raw_parts(ptr, len).to_vec();
-            let _ = GlobalUnlock(global);
-            crate::snip::dib_to_rgb(&bytes)
-        })();
-        let _ = CloseClipboard();
-        result
-    }
-}
-
-/// Lets WebView2 itself accept dropped files, so the page gets ordinary HTML
-/// drag-and-drop events (see the island's drop handling).
-///
-/// wry turns this off so drops reach the IDropTarget it registers instead. But
-/// current WebView2 runtimes host Chrome_RenderWidgetHostHWND in their own
-/// browser process: we cannot revoke its drop target from here
-/// (unblock_webview_drops only works while it is in-process), so with external
-/// drops off it refuses every file and the cursor shows "no drop". Drops that
-/// still reach wry's target arrive as Tauri drag events, as before.
-pub fn allow_webview_drops(win: &WebviewWindow) {
-    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller4;
-    use windows_core::Interface;
-    let _ = win.with_webview(|wv| unsafe {
-        if let Ok(c) = wv.controller().cast::<ICoreWebView2Controller4>() {
-            let _ = c.SetAllowExternalDrop(true);
-        }
-    });
-}
 
 /// WS_EX_NOACTIVATE keeps clicks from stealing focus; WS_EX_TOOLWINDOW keeps the
 /// island out of Alt-Tab.

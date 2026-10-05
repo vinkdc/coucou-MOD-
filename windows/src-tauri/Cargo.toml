@@ -1,13 +1,13 @@
 [package]
-name = "coucou"
-description = "Coucou for Windows and Linux — Mochi lives at the top of your screen"
+name = "kotoba"
+description = "Kotoba — learn Japanese by talking with Mochi"
 authors = ["Louis Raille"]
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "coucou_lib"
+name = "kotoba_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -1,7 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What Coucou's windows are allowed to do. Everything that touches the OS goes through Coucou's own commands.",
-  "windows": ["island", "settings", "highlight", "skin-editor"],
-  "permissions": ["core:default", "autostart:default"]
+  "description": "What Kotoba’s windows are allowed to do. Everything that touches the OS goes through Kotoba’s own commands.",
+  "windows": [
+    "island",
+    "settings",
+    "skin-editor"
+  ],
+  "permissions": [
+    "core:default",
+    "autostart:default"
+  ]
 }

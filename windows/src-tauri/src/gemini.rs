@@ -48,47 +48,6 @@ pub fn user_message(query: &str, context: Option<&ChatContext>) -> Value {
     json!({ "role": "user", "parts": parts })
 }
 
-/// A user message carrying one PNG, for the guide's "Check my step".
-pub fn user_message_with_image(query: &str, png_b64: &str) -> Value {
-    json!({ "role": "user", "parts": [
-        { "inlineData": { "mimeType": "image/png", "data": png_b64 } },
-        { "text": query },
-    ] })
-}
-
-/// A lean, non-streaming one-shot: no function declarations, no Google Search, a
-/// short system prompt and a small output cap (thinking models count their
-/// thoughts against it, so it is not tiny).
-pub async fn ask(key: &str, model: &str, system: &str, message: &Value, max_tokens: u32) -> Result<String, String> {
-    let url = format!("{BASE}/models/{model}:generateContent");
-    let body = json!({
-        "systemInstruction": { "parts": [{ "text": system }] },
-        "contents": [message],
-        "generationConfig": { "maxOutputTokens": max_tokens },
-    });
-    let reply: Value = post(key, &url, &body)
-        .await?
-        .json()
-        .await
-        .map_err(|e| format!("Unexpected API response: {e}"))?;
-    let text = reply
-        .get("candidates")
-        .and_then(|c| c.get(0))
-        .and_then(|c| c.get("content"))
-        .and_then(|c| c.get("parts"))
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|p| p.get("thought").and_then(Value::as_bool) != Some(true))
-        .filter_map(|p| p.get("text").and_then(Value::as_str))
-        .collect::<Vec<_>>()
-        .join("");
-    if text.trim().is_empty() {
-        return Err("Gemini returned nothing.".into());
-    }
-    Ok(text)
-}
-
 fn declarations(defs: &[ToolDef]) -> Vec<Value> {
     defs.iter()
         .map(|d| {
@@ -107,11 +66,12 @@ fn declarations(defs: &[ToolDef]) -> Vec<Value> {
 /// any character it plays) doesn't promise a search it cannot run.
 const NO_SEARCH: &str = "Web search is NOT available right now: this Gemini key doesn't include Google Search. \
 If the user asks you to search or look something up online, say so plainly in one short sentence (in character if you play one), \
-suggest switching the chat to Claude in Coucou's settings for web search, and answer from what you already know when you can. \
+suggest switching the tutor to Claude in Kotoba's settings for web search, and answer from what you already know when you can. \
 Never say you are searching, never ask the user to wait for results.";
 
 fn body(system: &str, history: &[Value], defs: &[ToolDef], with_search: bool) -> Value {
-    let mut tools = vec![json!({ "functionDeclarations": declarations(defs) })];
+    // An empty list of function declarations is rejected, so a tool-less call omits it.
+    let mut tools = if defs.is_empty() { vec![] } else { vec![json!({ "functionDeclarations": declarations(defs) })] };
     let system = if with_search {
         system.to_string()
     } else {
@@ -120,12 +80,15 @@ fn body(system: &str, history: &[Value], defs: &[ToolDef], with_search: bool) ->
     if with_search {
         tools.push(json!({ "googleSearch": {} }));
     }
-    json!({
+    let mut body = json!({
         "systemInstruction": { "parts": [{ "text": system }] },
         "contents": history,
-        "tools": tools,
         "generationConfig": { "maxOutputTokens": MAX_OUTPUT_TOKENS },
-    })
+    });
+    if !tools.is_empty() {
+        body["tools"] = json!(tools);
+    }
+    body
 }
 
 /// Most other models tried with Google Search after the chosen one refuses it.
@@ -614,8 +577,11 @@ mod tests {
 
     #[test]
     fn without_search_the_model_is_told_so() {
-        let on = super::body("SYS", &[], &[], true);
-        let off = super::body("SYS", &[], &[], false);
+        let defs = [ToolDef { name: "log_progress", description: "x", params: None }];
+        let on = super::body("SYS", &[], &defs, true);
+        let off = super::body("SYS", &[], &defs, false);
+        // A call without tools (a lookup) sends no tools key at all.
+        assert!(super::body("SYS", &[], &[], false).get("tools").is_none());
         let text = |b: &serde_json::Value| b["systemInstruction"]["parts"][0]["text"].as_str().unwrap().to_string();
         assert_eq!(text(&on), "SYS");
         assert!(text(&off).starts_with("SYS") && text(&off).contains("NOT available"));
@@ -624,7 +590,7 @@ mod tests {
     }
 
     use super::*;
-    use crate::assistant::tools;
+    use crate::assistant::ToolDef;
 
     #[test]
     fn automatic_prefers_flash_lite_then_newest_stable_flash() {
@@ -663,11 +629,13 @@ mod tests {
 
     #[test]
     fn declarations_omit_parameters_for_no_arg_tools() {
-        let decls = declarations(&tools());
-        let status = decls.iter().find(|d| d["name"] == "coucou_status").unwrap();
-        assert!(status.get("parameters").is_none());
-        let run = decls.iter().find(|d| d["name"] == "run_command").unwrap();
-        assert_eq!(run["parameters"]["type"], "object");
+        let defs = [
+            ToolDef { name: "bare", description: "no args", params: None },
+            ToolDef { name: "log_progress", description: "x", params: crate::assistant::obj(json!({}), &[]) },
+        ];
+        let decls = declarations(&defs);
+        assert!(decls[0].get("parameters").is_none());
+        assert_eq!(decls[1]["parameters"]["type"], "object");
     }
 
     #[test]

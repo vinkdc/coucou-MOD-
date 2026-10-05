@@ -1,10 +1,9 @@
-// Settings window — the place where anything that writes to disk is confirmed.
-// Stage 2 covers the Claude Code hooks and the general preferences; API keys and
-// integrations land here too in a later stage.
+// Settings window — the AI that teaches, the voice, how lessons look, and the
+// general preferences. Keys go straight to the Credential Manager.
 
 import "@fontsource-variable/inter/opsz.css";
 import "./settings.css";
-import { Bridge, onEvent, type HookStatus, type SkinInfo } from "../core/bridge";
+import { Bridge, onEvent, type SkinInfo, type Voice } from "../core/bridge";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
 import { h, clear } from "../views/dom";
 import { localSkinNames } from "../mochi/localSkins";
@@ -36,156 +35,17 @@ function statusDot(ok: boolean): HTMLElement {
   return h("i", { class: "dot", style: `background:${ok ? "#22c55e" : "#f4505e"}` });
 }
 
-function renderDiff(text: string): HTMLElement {
-  const box = h("div", { class: "diff" });
-  for (const line of text.split("\n")) {
-    const cls = line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : "ctx";
-    box.append(h("div", { class: cls, text: line }));
-  }
-  return box;
-}
-
-// ── Claude Code section ───────────────────────────────────────────────────────
-
-function claudeSection(status: HookStatus): HTMLElement {
-  const body = h("div", { style: "display:flex;flex-direction:column;gap:12px" });
-  const section = h(
-    "section",
-    {},
-    h("h2", {}, statusDot(status.installed), h("span", { text: "Claude Code" })),
-    body,
-  );
-
-  const rebuild = async () => {
-    const fresh = await Bridge.hooksStatus();
-    if (fresh) Object.assign(status, fresh);
-    clear(body);
-    draw();
-    const head = section.querySelector("h2")!;
-    clear(head);
-    head.append(statusDot(status.installed), h("span", { text: "Claude Code" }));
-  };
-
-  function draw() {
-    body.append(
-      h("div", {
-        class: "hint",
-        text: status.installed
-          ? "Coucou is hooked into your Claude Code sessions. Tool calls, questions and permission requests show up in the island, and you can answer them there."
-          : "Install the hooks to see your Claude Code sessions in the island and approve permissions without leaving what you are doing.",
-      }),
-      h("div", { class: "row" },
-        h("label", { text: "settings.json" }),
-        h("span", { class: "path", text: status.settingsPath }),
-      ),
-      h("div", { class: "row" },
-        h("label", { text: "Relay" }),
-        h("span", { class: "path", text: status.hookPath }),
-        statusDot(status.hookReady),
-      ),
-    );
-
-    if (!status.hookReady) {
-      body.append(h("div", {
-        class: "notice warn",
-        text: "coucou-hook.exe is not in place yet. Restart Coucou; if it still fails, build it with `cargo build -p coucou-hook`.",
-      }));
-    }
-
-    const actions = h("div", { class: "row" });
-    const install = h("button", {
-      class: "primary",
-      text: status.installed ? "Reinstall hooks…" : "Install hooks…",
-      onclick: () => showPreview(true),
-    });
-    // Writing hook commands that point at a relay which isn't there would give
-    // every Claude Code session a broken hook and nothing to show for it.
-    if (!status.hookReady) {
-      install.disabled = true;
-      install.title = "The relay isn't installed yet.";
-    }
-    actions.append(install);
-    if (status.installed) {
-      actions.append(h("button", {
-        class: "danger",
-        text: "Uninstall hooks…",
-        onclick: () => showPreview(false),
-      }));
-    }
-    body.append(actions);
-  }
-
-  async function showPreview(install: boolean) {
-    let preview;
-    try {
-      preview = await Bridge.hooksPreview(install);
-    } catch (err) {
-      // An unreadable or invalid settings.json stops here rather than being
-      // treated as empty and written over.
-      clear(body);
-      body.append(
-        h("div", { class: "notice err", text: String(err).replace(/^Error:\s*/, "") }),
-        h("div", { class: "row" }, h("button", {
-          text: "Back",
-          onclick: () => { clear(body); draw(); },
-        })),
-      );
-      return;
-    }
-    if (!preview) return;
-    clear(body);
-    body.append(
-      h("div", {
-        class: "hint",
-        text: install
-          ? "This is exactly what will change in your settings.json. Your own hooks are left untouched."
-          : "This removes Coucou's entries only. Your own hooks are left untouched.",
-      }),
-      renderDiff(preview.diff),
-      h("div", { class: "row" },
-        h("span", { class: "path", text: `Backup → ${preview.backup}` }),
-      ),
-    );
-    const confirm = h("button", {
-      class: install ? "primary" : "danger",
-      text: install ? "Back up and write" : "Back up and remove",
-    });
-    confirm.addEventListener("click", async () => {
-      confirm.disabled = true;
-      try {
-        const backup = await Bridge.hooksApply(install, preview.fingerprint);
-        clear(body);
-        body.append(h("div", {
-          class: "notice ok",
-          text: `Done. Previous settings saved as ${backup}. Open a new Claude Code session to pick the hooks up.`,
-        }));
-        window.setTimeout(() => void rebuild(), 2600);
-      } catch (err) {
-        confirm.disabled = false;
-        body.append(h("div", { class: "notice err", text: `Could not write: ${String(err)}` }));
-      }
-    });
-    body.append(h("div", { class: "row" }, confirm, h("button", {
-      text: "Cancel",
-      onclick: () => { clear(body); draw(); },
-    })));
-  }
-
-  draw();
-  return section;
-}
-
 // ── Claude API section ────────────────────────────────────────────────────────
 
 const MODELS: [string, string][] = [
-  ["claude-opus-5", "Claude Opus 5"],
-  ["claude-sonnet-5", "Claude Sonnet 5"],
-  ["claude-haiku-4-5", "Claude Haiku 4.5"],
+  ["claude-opus-5-5", "Claude Opus 5.5"],
+  ["claude-sonnet-5-5", "Claude Sonnet 5.5"],
+  ["claude-haiku-4-5-20251001", "Claude Haiku 4.5 (fastest)"],
 ];
 
 function apiSection(hasKey: boolean): HTMLElement {
   const dot = statusDot(hasKey);
-  const state = h("span", { class: "hint", text: hasKey ? "Key saved in the Windows Credential Manager." : "No key yet — the chat needs one." });
+  const state = h("span", { class: "hint", text: hasKey ? "Key saved in the Windows Credential Manager." : "No key yet — Mochi needs one to teach (or use Gemini)." });
 
   const field = h("input", {
     type: "password",
@@ -204,7 +64,7 @@ function apiSection(hasKey: boolean): HTMLElement {
     dot.style.background = present ? "#22c55e" : "#f4505e";
     state.textContent = present
       ? "Key saved in the Windows Credential Manager."
-      : "No key yet — the chat needs one.";
+      : "No key yet — Mochi needs one to teach (or use Gemini).";
     field.placeholder = present ? "••••••••••••  (stored)" : "sk-ant-...";
     clearBtn.style.display = present ? "" : "none";
   }
@@ -358,9 +218,9 @@ function geminiSection(hasKey: boolean): HTMLElement {
     h("h2", {}, dot, h("span", { text: "Gemini" })),
     state,
     h("div", { class: "row" },
-      h("label", { text: "Chat uses" }),
+      h("label", { text: "Mochi uses" }),
       provider,
-      h("span", { class: "hint", text: "opening apps, files, the screen and commands always ask first" }),
+      h("span", { class: "hint", text: "the AI that teaches you" }),
     ),
     h("div", { class: "row" }, h("label", { text: "API key" }), field, saveBtn, clearBtn),
     h("div", { class: "row" }, h("label", { text: "Model" }), model),
@@ -368,108 +228,259 @@ function geminiSection(hasKey: boolean): HTMLElement {
   );
 }
 
-// ── Integrations section ──────────────────────────────────────────────────────
+// ── Learning section ──────────────────────────────────────────────────────────
 
-interface IntegrationDef {
-  id: string;
-  name: string;
-  color: string;
-  /** Credential Manager keys, in the order they are shown. */
-  fields: { key: string; label: string; placeholder: string; secret: boolean }[];
+function select<T extends string>(value: T, options: [T, string][], onChange: (v: T) => void): HTMLSelectElement {
+  const el = h("select", {}) as HTMLSelectElement;
+  for (const [v, label] of options) el.append(h("option", { value: v, text: label }));
+  el.value = value;
+  el.addEventListener("change", () => onChange(el.value as T));
+  return el;
 }
 
-const INTEGRATIONS: IntegrationDef[] = [
-  { id: "integration_stripe", name: "Stripe", color: "#0570DE",
-    fields: [{ key: "stripe-api-key", label: "Secret key", placeholder: "sk_live_…", secret: true }] },
-  { id: "integration_github", name: "GitHub", color: "#F4505E",
-    fields: [{ key: "github-token", label: "Token", placeholder: "ghp_…", secret: true }] },
-  { id: "integration_vercel", name: "Vercel", color: "#7C5CFF",
-    fields: [{ key: "vercel-token", label: "Token", placeholder: "…", secret: true }] },
-  { id: "integration_n8n", name: "n8n", color: "#F29B38",
-    fields: [
-      { key: "n8n-url", label: "Instance URL", placeholder: "https://n8n.example.com", secret: false },
-      { key: "n8n-api-key", label: "API key", placeholder: "…", secret: true },
-    ] },
-  { id: "integration_resend", name: "Resend", color: "#22C55E",
-    fields: [{ key: "resend-api-key", label: "API key", placeholder: "re_…", secret: true }] },
-  { id: "integration_notion", name: "Notion", color: "#8C8C8C",
-    fields: [{ key: "notion-api-key", label: "Integration token", placeholder: "ntn_…", secret: true }] },
-  { id: "integration_calcom", name: "Cal.com", color: "#C9956A",
-    fields: [{ key: "calcom-api-key", label: "API key", placeholder: "cal_…", secret: true }] },
+function learningSection(): HTMLElement {
+  const goal = h("input", {
+    type: "number", min: "1", max: "180", step: "1",
+    value: String(settings.dailyGoalMinutes),
+    style: "width:72px",
+  }) as HTMLInputElement;
+  goal.addEventListener("change", () => {
+    settings.dailyGoalMinutes = Math.max(1, Math.min(180, Math.round(Number(goal.value) || 10)));
+    goal.value = String(settings.dailyGoalMinutes);
+    void save();
+  });
+
+  return h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: "Learning" })),
+    h("span", { class: "hint", text: "Mochi starts you as a beginner and adjusts as it learns your level. These change how lessons look." }),
+    h("div", { class: "row" },
+      h("label", { text: "English support" }),
+      select(settings.englishSupport, [["auto", "Follow my level"], ["more", "More English"], ["less", "Less English"]], (v) => {
+        settings.englishSupport = v;
+        void save();
+      }),
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Furigana" }),
+      select(settings.furigana, [["always", "Over every kanji"], ["unknown", "Only words I don't know well"], ["off", "Off (tap a word to see it)"]], (v) => {
+        settings.furigana = v;
+        void save();
+      }),
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Romaji" }),
+      toggle(settings.romaji, (v) => { settings.romaji = v; void save(); }),
+      h("span", { class: "hint", text: "a romaji line under Japanese" }),
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Translations" }),
+      toggle(settings.showEnglish, (v) => { settings.showEnglish = v; void save(); }),
+      h("span", { class: "hint", text: "off: blurred until you tap them" }),
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Daily goal" }),
+      goal,
+      h("span", { class: "hint", text: "minutes" }),
+    ),
+  );
+}
+
+// ── Reminders section ─────────────────────────────────────────────────────────
+
+function timeField(value: string, onChange: (v: string) => void): HTMLInputElement {
+  const el = h("input", { type: "time", value, style: "width:110px" }) as HTMLInputElement;
+  el.addEventListener("change", () => {
+    if (el.value) onChange(el.value);
+  });
+  return el;
+}
+
+function remindersSection(): HTMLElement {
+  const max = h("input", {
+    type: "number", min: "1", max: "12", step: "1",
+    value: String(settings.reminderMaxPerDay),
+    style: "width:72px",
+  }) as HTMLInputElement;
+  max.addEventListener("change", () => {
+    settings.reminderMaxPerDay = Math.max(1, Math.min(12, Math.round(Number(max.value) || 4)));
+    max.value = String(settings.reminderMaxPerDay);
+    void save();
+  });
+  return h(
+    "section",
+    {},
+    h("h2", {}, h("span", { text: "Reminders" })),
+    h("span", { class: "hint", text: "Mochi pops up for a minute at natural breaks (when you come back from a pause, or cards pile up). Never in full-screen apps, quiet hours, or while you type." }),
+    h("div", { class: "row" },
+      h("label", { text: "Remind me" }),
+      toggle(settings.reminders, (v) => { settings.reminders = v; void save(); }),
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "At most" }),
+      max,
+      h("span", { class: "hint", text: "a day, at least 90 minutes apart" }),
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Quiet hours" }),
+      timeField(settings.quietStart, (v) => { settings.quietStart = v; void save(); }),
+      h("span", { class: "hint", text: "to" }),
+      timeField(settings.quietEnd, (v) => { settings.quietEnd = v; void save(); }),
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Review cards" }),
+      toggle(settings.reminderReview, (v) => { settings.reminderReview = v; void save(); }),
+      h("span", { class: "hint", text: "a 2-minute review of words that are due" }),
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Word of the day" }),
+      toggle(settings.reminderWord, (v) => { settings.reminderWord = v; void save(); }),
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Quick questions" }),
+      toggle(settings.reminderQuiz, (v) => { settings.reminderQuiz = v; void save(); }),
+    ),
+  );
+}
+
+// ── Voice section (Fish Audio) ────────────────────────────────────────────────
+
+const TTS_MODELS: [string, string][] = [
+  ["s2.1-pro-free", "S2.1 Pro (free tier)"],
+  ["s2.1-pro", "S2.1 Pro"],
+  ["s2-pro", "S2 Pro"],
+  ["s1", "S1"],
 ];
 
-const MAX_ACTIVE = 4;
+function voiceSection(hasKey: boolean): HTMLElement {
+  const KEY = "fish-audio-api-key";
+  const dot = statusDot(hasKey);
+  const keyText = (present: boolean) =>
+    present ? "Key saved in the Credential Manager." : "No key yet: get one at fish.audio (API keys). Without it Mochi can't speak.";
+  const state = h("span", { class: "hint", text: keyText(hasKey) });
+  const field = h("input", {
+    type: "password",
+    placeholder: hasKey ? "••••••••••••  (stored)" : "Paste your Fish Audio API key",
+    style: "flex:1 1 auto;min-width:0",
+    autocomplete: "off",
+    spellcheck: "false",
+  }) as HTMLInputElement;
+  const saveBtn = h("button", { class: "primary", text: "Save key" });
+  const clearBtn = h("button", { class: "danger", text: "Remove" });
+  const feedback = h("div", {});
 
-function integrationsSection(present: Record<string, boolean>): HTMLElement {
-  const note = h("div", { class: "hint" });
-  const list = h("div", { style: "display:flex;flex-direction:column;gap:14px" });
+  const voice = h("select", { style: "flex:1 1 auto;min-width:0" }) as HTMLSelectElement;
+  const preview = h("button", { text: "▶ Preview" });
+  const mine = h("button", { text: "My voices", title: "Voices you created on fish.audio" });
+  const voiceMsg = h("div", { class: "hint" });
 
-  function updateNote() {
-    const used = settings.activeIntegrations.length;
-    note.textContent = `Pick up to ${MAX_ACTIVE} pills to show next to Mochi — ${used}/${MAX_ACTIVE} in use. Keys are stored in the Windows Credential Manager, never on disk.`;
-  }
-
-  for (const def of INTEGRATIONS) {
-    const active = settings.activeIntegrations.includes(def.id);
-    const sw = h("button", { class: active ? "switch on" : "switch" });
-    sw.addEventListener("click", () => {
-      const on = settings.activeIntegrations.includes(def.id);
-      if (on) {
-        settings.activeIntegrations = settings.activeIntegrations.filter((x) => x !== def.id);
-      } else {
-        if (settings.activeIntegrations.length >= MAX_ACTIVE) return;
-        settings.activeIntegrations = [...settings.activeIntegrations, def.id];
-      }
-      sw.classList.toggle("on", !on);
-      updateNote();
-      void save();
-    });
-
-    const rows = h("div", { style: "display:flex;flex-direction:column;gap:6px;flex:1 1 auto;min-width:0" });
-    for (const field of def.fields) {
-      const input = h("input", {
-        type: field.secret ? "password" : "text",
-        placeholder: present[field.key] ? "••••••••  (stored)" : field.placeholder,
-        autocomplete: "off",
-        spellcheck: "false",
-        style: "flex:1 1 auto;min-width:0",
-      }) as HTMLInputElement;
-      const saveBtn = h("button", { text: "Save" });
-      const dotEl = statusDot(present[field.key] ?? false);
-      saveBtn.addEventListener("click", async () => {
-        const value = input.value.trim();
-        try {
-          await Bridge.secretSet(field.key, value);
-          present[field.key] = value.length > 0;
-          input.value = "";
-          input.placeholder = value ? "••••••••  (stored)" : field.placeholder;
-          dotEl.style.background = value ? "#22c55e" : "#f4505e";
-        } catch {
-          dotEl.style.background = "#f5a524";
-        }
-      });
-      rows.append(
-        h("div", { class: "row" },
-          h("label", { style: "min-width:104px", text: field.label }),
-          input, saveBtn, dotEl,
-        ),
-      );
+  function fillVoices(list: Voice[]) {
+    clear(voice);
+    voice.append(h("option", { value: "", text: "Fish Audio default" }));
+    if (settings.ttsVoice && !list.some((v) => v.id === settings.ttsVoice)) {
+      voice.append(h("option", { value: settings.ttsVoice, text: settings.ttsVoiceName || settings.ttsVoice }));
     }
-
-    list.append(
-      h("div", { style: "display:flex;gap:12px;align-items:flex-start" },
-        h("div", { style: "display:flex;align-items:center;gap:8px;min-width:132px;padding-top:4px" },
-          sw,
-          h("i", { class: "dot", style: `background:${def.color}` }),
-          h("span", { style: "font-size:12.5px", text: def.name }),
-        ),
-        rows,
-      ),
-    );
+    for (const v of list) voice.append(h("option", { value: v.id, text: v.title, title: v.description }));
+    voice.value = settings.ttsVoice;
   }
 
-  updateNote();
-  return h("section", {}, h("h2", {}, h("span", { text: "Integrations" })), note, list);
+  async function loadVoices(own: boolean) {
+    voiceMsg.textContent = own ? "Loading your voices…" : "Loading Japanese voices…";
+    try {
+      const list = await Bridge.fishVoices(own);
+      fillVoices(list);
+      voiceMsg.textContent = list.length ? "" : own ? "You have no voices of your own yet." : "No voices found.";
+    } catch (err) {
+      voiceMsg.textContent = String(err);
+    }
+  }
+
+  voice.addEventListener("change", () => {
+    settings.ttsVoice = voice.value;
+    settings.ttsVoiceName = voice.value ? voice.selectedOptions[0]?.text ?? "" : "";
+    void save();
+  });
+  preview.addEventListener("click", async () => {
+    voiceMsg.textContent = "";
+    try {
+      const bytes = await Bridge.ttsSpeak("こんにちは！一緒に日本語を勉強しましょう。", voice.value);
+      const url = URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" }));
+      const a = new Audio(url);
+      a.onended = () => URL.revokeObjectURL(url);
+      await a.play();
+    } catch (err) {
+      voiceMsg.textContent = String(err).replace(/^Error:\s*/, "");
+    }
+  });
+  mine.addEventListener("click", () => void loadVoices(true));
+
+  async function refresh() {
+    const present = (await Bridge.secretPresent(KEY)) ?? false;
+    dot.style.background = present ? "#22c55e" : "#f4505e";
+    state.textContent = keyText(present);
+    field.placeholder = present ? "••••••••••••  (stored)" : "Paste your Fish Audio API key";
+    clearBtn.style.display = present ? "" : "none";
+    if (present) await loadVoices(false);
+    else fillVoices([]);
+  }
+
+  saveBtn.addEventListener("click", async () => {
+    const value = field.value.trim();
+    if (!value) return;
+    clear(feedback);
+    try {
+      await Bridge.secretSet(KEY, value);
+      field.value = "";
+      feedback.append(h("div", { class: "notice ok", text: "Saved. It never touches disk." }));
+      await refresh();
+    } catch (err) {
+      feedback.append(h("div", { class: "notice err", text: `Could not save: ${String(err)}` }));
+    }
+  });
+  clearBtn.addEventListener("click", async () => {
+    clear(feedback);
+    try {
+      await Bridge.secretClear(KEY);
+      feedback.append(h("div", { class: "notice ok", text: "Key removed." }));
+      await refresh();
+    } catch (err) {
+      feedback.append(h("div", { class: "notice err", text: `Could not remove: ${String(err)}` }));
+    }
+  });
+
+  const speed = h("input", { type: "range", min: "0.6", max: "1.3", step: "0.05", value: String(settings.ttsSpeed) }) as HTMLInputElement;
+  const speedLabel = h("span", { class: "hint", text: `${settings.ttsSpeed.toFixed(2)}×` });
+  speed.addEventListener("input", () => {
+    settings.ttsSpeed = Number(speed.value);
+    speedLabel.textContent = `${settings.ttsSpeed.toFixed(2)}×`;
+  });
+  speed.addEventListener("change", () => void save());
+
+  clearBtn.style.display = hasKey ? "" : "none";
+  fillVoices([]);
+  if (hasKey) void loadVoices(false);
+
+  return h(
+    "section",
+    {},
+    h("h2", {}, dot, h("span", { text: "Voice (Fish Audio)" })),
+    state,
+    h("div", { class: "row" }, h("label", { text: "API key" }), field, saveBtn, clearBtn),
+    h("div", { class: "row" }, h("label", { text: "Voice" }), voice, preview, mine),
+    voiceMsg,
+    h("div", { class: "row" },
+      h("label", { text: "Model" }),
+      select(settings.ttsModel, TTS_MODELS, (v) => { settings.ttsModel = v; void save(); }),
+    ),
+    h("div", { class: "row" }, h("label", { text: "Speed" }), speed, speedLabel),
+    h("div", { class: "row" },
+      h("label", { text: "Read replies aloud" }),
+      toggle(settings.autoPlay, (v) => { settings.autoPlay = v; void save(); }),
+    ),
+    h("span", { class: "hint", text: "Only Mochi's Japanese lines are sent to Fish Audio. Clips are cached on this PC, so replays are free." }),
+    feedback,
+  );
 }
 
 // ── General section ───────────────────────────────────────────────────────────
@@ -686,10 +697,10 @@ function generalSection(): HTMLElement {
     h("div", { class: "row" },
       h("label", { text: "Your name" }),
       userName,
-      h("span", { class: "hint", text: "what characters call you" }),
+      h("span", { class: "hint", text: "what Mochi calls you" }),
     ),
     h("div", { class: "row" },
-      h("label", { text: "Island appears from the" }),
+      h("label", { text: "Mochi appears from the" }),
       position,
     ),
     h("div", { class: "row" },
@@ -709,6 +720,7 @@ function keyCaps(combo: string): HTMLElement {
 }
 
 const GLOBAL_DEFAULT = "Ctrl+Alt+C";
+const LOOKUP_DEFAULT = "Ctrl+Alt+J";
 
 function keyboardSection(): HTMLElement {
   const box = h("section", {});
@@ -808,9 +820,9 @@ function keyboardSection(): HTMLElement {
     return null;
   }
 
-  async function setGlobal(enabled: boolean, accelerator: string): Promise<string | null> {
+  async function setGlobal(enabled: boolean, accelerator: string, lookup = settings.hotkeyLookup): Promise<string | null> {
     try {
-      const updated = await Bridge.setHotkey(enabled, accelerator);
+      const updated = await Bridge.setHotkey(enabled, accelerator, lookup);
       settings = { ...settings, ...updated };
       return null;
     } catch (err) {
@@ -827,10 +839,17 @@ function keyboardSection(): HTMLElement {
       h("div", { class: "key-group" },
         h("div", { class: "key-group-title", text: "Anywhere in Windows" }),
         ...row({
-          id: "global", label: "Show or hide the island", global: true, lead: toggleEl,
+          id: "global", label: "Ask Mochi", global: true, lead: toggleEl,
           combo: settings.hotkeyAccelerator, custom: settings.hotkeyAccelerator !== GLOBAL_DEFAULT,
           set: (combo) => setGlobal(true, combo),
           reset: () => setGlobal(settings.hotkeyEnabled, GLOBAL_DEFAULT),
+        }),
+        ...row({
+          id: "lookup", label: "Look up selected text", global: true,
+          combo: settings.hotkeyLookup, custom: settings.hotkeyLookup !== LOOKUP_DEFAULT,
+          note: "Select Japanese in any app and press it. The text is sent to your AI only when you press it.",
+          set: (combo) => setGlobal(true, settings.hotkeyAccelerator, combo),
+          reset: () => setGlobal(settings.hotkeyEnabled, settings.hotkeyAccelerator, LOOKUP_DEFAULT),
         }),
       ),
       ...(["island", "editor"] as const).map((scope) =>
@@ -853,7 +872,7 @@ function keyboardSection(): HTMLElement {
         class: "ghost", text: "Reset all keys",
         onclick: () => {
           settings = { ...settings, keys: {} };
-          void save().then(() => setGlobal(settings.hotkeyEnabled, GLOBAL_DEFAULT)).then(() => { say(""); render(); });
+          void save().then(() => setGlobal(settings.hotkeyEnabled, GLOBAL_DEFAULT, LOOKUP_DEFAULT)).then(() => { say(""); render(); });
         },
       })),
     );
@@ -871,27 +890,18 @@ async function main() {
     settings = { ...settings, ...boot.settings };
     version = boot.version;
   }
-  const status = (await Bridge.hooksStatus()) ?? {
-    installed: false, settingsPath: "", hookPath: "", hookReady: false,
-  };
-
   const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
   const hasGeminiKey = (await Bridge.secretPresent("gemini-api-key")) ?? false;
-
-  const keys = [
-    "stripe-api-key", "github-token", "vercel-token",
-    "n8n-url", "n8n-api-key", "resend-api-key", "notion-api-key", "calcom-api-key",
-  ];
-  const present: Record<string, boolean> = {};
-  for (const k of keys) present[k] = (await Bridge.secretPresent(k)) ?? false;
+  const hasFishKey = (await Bridge.secretPresent("fish-audio-api-key")) ?? false;
 
   clear(root);
   root.append(
-    h("h1", {}, h("span", { text: "Coucou" }), h("span", { class: "version", text: version })),
-    claudeSection(status),
+    h("h1", {}, h("span", { text: "Kotoba" }), h("span", { class: "version", text: version })),
+    learningSection(),
+    remindersSection(),
+    voiceSection(hasFishKey),
     apiSection(hasKey),
     geminiSection(hasGeminiKey),
-    integrationsSection(present),
     generalSection(),
     keyboardSection(),
     h("div", {

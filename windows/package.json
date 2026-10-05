@@ -1,5 +1,5 @@
 {
-  "name": "coucou-windows",
+  "name": "kotoba",
   "private": true,
   "version": "0.1.1",
   "type": "module",
@@ -9,9 +9,8 @@
     "preview": "vite preview",
     "icons": "node scripts/gen-icons.mjs",
     "tauri": "tauri",
-    "predev": "cargo build --release -p coucou-hook",
-    "prebuild": "cargo build --release -p coucou-hook",
-    "pack": "tauri build && node scripts/pack.mjs"
+    "pack": "tauri build && node scripts/pack.mjs",
+    "test": "node --test tests/*.test.ts"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

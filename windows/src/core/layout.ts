@@ -5,25 +5,17 @@
 export type IslandMode = "hidden" | "compact" | "expanded";
 
 export type IslandViewName =
-  | "overview"
-  | "editor"
-  | "empty"
-  | "approval"
-  | "question"
-  | "error"
-  | "finished"
-  | "confused"
-  | "upload"
-  | "uploading"
-  | "mail"
+  | "home"
   | "prompt"
-  | "searching"
-  | "result"
+  | "nudge"
+  | "lookup"
+  | "review"
+  | "stats"
+  | "study"
+  | "confused"
   | "note"
   | "settings"
-  | "guide"
-  | "greeting"
-  | "tools";
+  | "greeting";
 
 export type BotStateName =
   | "idle"
@@ -40,20 +32,20 @@ export type BotStateName =
 
 export type BotEmoteName = "love" | "surprised" | "proud" | "wink" | "yawn" | "happy" | "annoyed";
 
-export type AgentLayoutMode = "none" | "grid" | "pills" | "column";
-
 export interface ViewLayout {
   height: number;
   botX: number;
   botY: number | null; // null = auto-centred
   botDiameter: number;
-  agentMode: AgentLayoutMode;
 }
 
-// The window is a fixed 720×320 (largest view) like the macOS panel; the island is
+// The window is a fixed size (largest view) like the macOS panel; the island is
 // drawn inside it, glued to the top edge and horizontally centred.
-export const PANEL_W = 900;
-export const PANEL_H = 600;
+export const PANEL_W = 1060;
+export const PANEL_H = 700;
+
+/** The study view: the island grows into a large panel (Talk, Review, Progress). */
+export const STUDY_SIZE = { w: 1000, h: 660 } as const;
 
 /** The chat when it has been expanded with the header button. */
 export const CHAT_EXPANDED = { w: 820, h: 520 } as const;
@@ -68,34 +60,21 @@ export const ROUNDED_CORNER = 14; // hidden / compact
 export const EXPANDED_CORNER = 22;
 
 export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
-  overview: { height: 188, botX: 68, botY: null, botDiameter: 58, agentMode: "pills" },
-  // The file and its change: 42 (header) + 268 (card) + 10 (inset) tall, Mochi top left over the steps.
-  editor: { height: 320, botX: 64, botY: 104, botDiameter: 58, agentMode: "none" },
-  empty: { height: 160, botX: 70, botY: null, botDiameter: 62, agentMode: "none" },
-  approval: { height: 160, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
-  question: { height: 160, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
-  error: { height: 160, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
-  finished: { height: 160, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
-  confused: { height: 160, botX: 76, botY: null, botDiameter: 66, agentMode: "column" },
-  upload: { height: 176, botX: 140, botY: 104, botDiameter: 62, agentMode: "column" },
-  // botY 103 = bar top (42 + 58) + 3, so the dot really rides the bar. The Swift
-  // layout says 118 while its own comment says 103; the comment matches the spec.
-  uploading: { height: 176, botX: 46, botY: 103, botDiameter: 20, agentMode: "none" },
-  mail: { height: 240, botX: 56, botY: null, botDiameter: 46, agentMode: "column" },
-  prompt: { height: 160, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
-  searching: { height: 160, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
-  result: { height: 160, botX: 52, botY: null, botDiameter: 44, agentMode: "column" },
-  note: { height: 160, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
-  settings: { height: 160, botX: 54, botY: null, botDiameter: 46, agentMode: "none" },
-  guide: { height: 160, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
-  // The Tools tab: two cards under the header, no character.
-  tools: { height: 240, botX: 0, botY: null, botDiameter: 0, agentMode: "none" },
-  greeting: { height: 150, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
+  // Mochi on the left; today at a glance and the ways in on the right.
+  home: { height: 176, botX: 70, botY: null, botDiameter: 62 },
+  nudge: { height: 160, botX: 66, botY: null, botDiameter: 60 },
+  confused: { height: 160, botX: 76, botY: null, botDiameter: 66 },
+  prompt: { height: 160, botX: 52, botY: null, botDiameter: 44 },
+  // The lookup answer scrolls inside its card; Mochi sits beside it.
+  lookup: { height: 300, botX: 52, botY: null, botDiameter: 44 },
+  review: { height: 236, botX: 52, botY: null, botDiameter: 44 },
+  stats: { height: 196, botX: 52, botY: null, botDiameter: 44 },
+  // No Mochi on the panel: the study UI has its own rail.
+  study: { height: STUDY_SIZE.h, botX: 0, botY: null, botDiameter: 0 },
+  note: { height: 160, botX: 60, botY: null, botDiameter: 50 },
+  settings: { height: 160, botX: 54, botY: null, botDiameter: 46 },
+  greeting: { height: 150, botX: 320, botY: 90, botDiameter: 0 },
 };
-
-// The upload views above are only the fallback geometry. Once a file is actually
-// dropped the whole sequence — Mochi included — is drawn by src/upload, which
-// owns its own constants (USC) straight from UploadSequenceEngine.swift.
 
 /** Chat view grows with the conversation — IslandContainer.chatPromptHeight. */
 export function chatPromptHeight(messageCount: number): number {
@@ -106,10 +85,8 @@ export function islandSize(
   mode: IslandMode,
   view: IslandViewName,
   chatCount = 0,
-  /** Extra rows the home view shows right now (the session chips). */
-  overviewExtra = 0,
   chatExpanded = false,
-  /** Height the chat's content needs (attachment and messages), measured; 0 = unknown. */
+  /** Height the chat's content needs, measured; 0 = unknown. */
   chatFit = 0,
 ): { w: number; h: number } {
   switch (mode) {
@@ -120,6 +97,7 @@ export function islandSize(
     case "compact":
       return { w: COMPACT_W, h: NOTCH_H };
     case "expanded": {
+      if (view === "study") return { w: STUDY_SIZE.w, h: STUDY_SIZE.h };
       if (view === "prompt" && chatExpanded) return { w: CHAT_EXPANDED.w, h: CHAT_EXPANDED.h };
       const h =
         view === "prompt"
@@ -128,7 +106,7 @@ export function islandSize(
               // the maximize size the conversation scrolls.
               Math.max(chatPromptHeight(0), Math.min(CHAT_EXPANDED.h, chatFit))
             : chatPromptHeight(chatCount)
-          : VIEW_LAYOUTS[view].height + (view === "overview" ? overviewExtra : 0);
+          : VIEW_LAYOUTS[view].height;
       return { w: EXPANDED_W, h };
     }
   }
@@ -142,12 +120,7 @@ export interface BotPlacement {
 }
 
 /** IslandRootView.botPosition — cy is measured from the island's top edge. */
-export function botPosition(
-  mode: IslandMode,
-  view: IslandViewName,
-  islandH: number,
-  uploadProgress = 0,
-): BotPlacement {
+export function botPosition(mode: IslandMode, view: IslandViewName, islandH: number): BotPlacement {
   switch (mode) {
     case "hidden":
       return { cx: 46, cy: 16, diameter: 6, opacity: 0 };
@@ -155,14 +128,8 @@ export function botPosition(
       return { cx: 40, cy: 16, diameter: 20, opacity: 1 };
     case "expanded": {
       const layout = VIEW_LAYOUTS[view];
-      if (view === "uploading") {
-        return {
-          cx: 36 + uploadProgress * 526,
-          cy: layout.botY ?? 103,
-          diameter: layout.botDiameter,
-          opacity: 1,
-        };
-      }
+      // A view with no character (the study panel).
+      if (layout.botDiameter === 0) return { cx: 0, cy: 0, diameter: 0, opacity: 0 };
       if (layout.botY != null) {
         return { cx: layout.botX, cy: layout.botY, diameter: layout.botDiameter, opacity: 1 };
       }
@@ -206,34 +173,6 @@ export function botGlowOpacity(s: BotStateName): number {
     default:
       return 0.65;
   }
-}
-
-// Project colours (IslandConst.projectColors)
-const PROJECT_COLORS: Record<string, string> = {
-  korus: "#FF5A4E",
-  "sbe hub": "#2EC4A0",
-  "morning ai brief": "#F29B38",
-  "publication ig": "#7C5CFF",
-  "ig post": "#7C5CFF",
-  "louisraille.fr": "#38BDF8",
-  louisraille: "#38BDF8",
-  "notch buddy": "#EC4899",
-  "notch-buddy": "#EC4899",
-  notchbuddy: "#EC4899",
-};
-
-const FALLBACK_COLORS = ["#22C55E", "#EAB308", "#60A5FA", "#E879F9"];
-
-export function colorForProject(name: string): string {
-  const key = name.toLowerCase().trim();
-  const exact = PROJECT_COLORS[key];
-  if (exact) return exact;
-  for (const [k, c] of Object.entries(PROJECT_COLORS)) {
-    if (key.startsWith(k) || key.includes(k)) return c;
-  }
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
-  return FALLBACK_COLORS[Math.abs(hash) % FALLBACK_COLORS.length];
 }
 
 // Card wash colours (CardBackground.washColor)

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Coucou",
+  "productName": "Kotoba",
   "version": "0.1.1",
-  "identifier": "fr.louisraille.coucou",
+  "identifier": "fr.louisraille.kotoba",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -18,10 +18,10 @@
     "windows": [
       {
         "label": "island",
-        "title": "Coucou",
+        "title": "Mochi",
         "url": "index.html",
-        "width": 900,
-        "height": 600,
+        "width": 1060,
+        "height": 700,
         "resizable": false,
         "decorations": false,
         "transparent": true,
@@ -34,29 +34,33 @@
         "maximizable": false,
         "minimizable": false,
         "closable": false,
-        "dragDropEnabled": true,
+        "dragDropEnabled": false,
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
       }
     ]
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.ico"
     ],
-    "resources": { "../target/release/coucou-hook.exe": "coucou-hook.exe" },
     "copyright": "© Louis Raille",
-    "category": "DeveloperTool",
-    "shortDescription": "Mochi lives at the top of your screen",
-    "longDescription": "Coucou puts Mochi at the top of your screen: it shows your Claude Code sessions and a few integrations, and lets you approve, answer, chat and drop files without leaving what you are doing.",
+    "category": "Education",
+    "shortDescription": "Learn Japanese by talking with Mochi",
+    "longDescription": "Kotoba is an immersion app for learning Japanese: chat with Mochi, an AI tutor that adapts to your level, hear every line read aloud by Fish Audio voices, and follow your progress.",
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["English", "French"],
+        "languages": [
+          "English",
+          "French"
+        ],
         "installerHooks": "nsis/hooks.nsh"
       }
     }

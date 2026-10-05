@@ -1,145 +1,135 @@
-# Windows app: developer notes
+# Kotoba — learn Japanese by talking with Mochi
 
-This folder holds the Windows app of Coucou MOD (it also builds on Linux). The project
-overview, screenshots and install steps are in the [root README](../README.md); this file is
-about how the code is organised and how to work on it.
+Kotoba (言葉, "words") is an immersion app for learning Japanese on Windows and Linux. You
+talk with Mochi, an AI tutor that starts you as a complete beginner, works out your level as
+you go, and teaches one step above it. Every Japanese line comes with furigana, optional
+romaji and a translation, and Fish Audio voices read it aloud.
 
-## How it fits together
+It is built from the Tauri app of Coucou (the Mochi character, the summonable island, the
+Settings window and the Credential Manager plumbing). The macOS app in `../NotchBuddy` is
+not part of Kotoba.
+
+## What it does
+
+- **The study panel** lives in the island: Kotoba opens on it, and the island grows into a
+  large panel (about 1000×660) that stays open until you close it (the ✕ in its rail, `Esc`
+  outside a text field, the hotkey, or the tray). From the tray (left click or Study…) or
+  the island's Study tab it opens again. Three views:
+  - **Talk**: pick a situation (free talk, self-introduction, café, directions, shopping,
+    daily routine) and chat. Replies show the Japanese with ruby furigana, a romaji line,
+    a ▶ button, the English, correction cards for your mistakes, and chips for new words.
+    The side panel shows today's goal ring, your streak, and the words met in this
+    conversation.
+  - **Progress**: level (0–100, with rough JLPT bands) and its trend, streak, words learned,
+    solid and weak, 30-day accuracy, a 12-week activity heatmap, mistakes by kind, words to
+    review (one click turns them into a practice conversation), and recent corrections.
+- **Mochi's island** (hotkey `Ctrl+Alt+C`, or the tray's Ask Mochi): a quick "how do I
+  say…" from anywhere, plus Today at a glance.
+
+## Learning in the flow of your day
+
+- **Look up anything on screen.** Select Japanese (or English) in any app and press
+  `Ctrl+Alt+J`: the island shows the reading, meaning and a short breakdown, reads it aloud,
+  and `+ word` chips add the new words to your reviews. Kotoba copies the selection with
+  Ctrl+C, then puts your clipboard back (it never overwrites a picture or files: it asks you
+  to copy first). The text goes to your AI only when you press the shortcut. On Linux it
+  reads the selection through `wl-paste` or `xclip`.
+- **Reviews (spaced repetition).** Every word Mochi teaches or you look up comes back after
+  1 day, then 3, then growing by its ease (a small SM-2: Again resets, Hard is slow, Easy is
+  fast). **Review** in the study panel (keys `Space`, `1`-`4`) or a 2-minute session from
+  the island's Today view. Cards alternate between seeing a word and hearing it.
+- **Speaking.** The mic in the composer dictates instead of typing. The mic on each Japanese
+  line records you saying it and shows how close it was to the line (what was recognised
+  against what Mochi wrote; it does not judge pitch accent). Needs microphone permission.
+  Speech recognition is Fish Audio's `transcribe-1-pro` (Beta). The recording stays in memory.
+- **Reminders at natural breaks.** After you come back from a pause, or when cards pile up,
+  Mochi offers a review, a word, or a quick question. Never in full-screen apps, quiet
+  hours (22:00-08:00), while you type, more than 4 a day, or within 90 minutes of the last
+  one; "Later" and "Not today" are remembered. All of it is in Settings → Reminders.
+
+## How Mochi learns your level
+
+The tutor has two silent tools (`src-tauri/src/tutor.rs`):
+
+- `log_progress` records, after each of your messages, the words you used rightly or
+  wrongly, your mistakes (vocab, grammar, particle, conjugation, kana), grammar points, and
+  the words it is introducing.
+- `assess_level` gives its estimate of your level from 0 to 100. Kotoba smooths it: the
+  first reading is capped at the beginner range, then each new estimate moves the level at
+  most 8 points.
+
+All of it lives in `learner.json` (`src-tauri/src/learner.rs`). Word strength rises with
+each right use and halves on a wrong one. A short summary (level, weak words, recent
+mistakes) goes into the tutor's prompt on every message, so it recycles what you struggle with.
+
+## Reply format
+
+The tutor writes tagged lines, which the page parses (`src/study/markup.ts`):
 
 ```
-Claude Code
-   |  hook event (JSON on stdin)
-   v
-coucou-hook.exe            hook/            tiny relay, 300 ms to deliver, never blocks
-   |  named pipe
-   v
-Rust backend               src-tauri/       window, pipe, settings, keys, chat, pollers
-   |  Tauri events and commands
-   v
-Island page                src/             TypeScript, no framework, Canvas 2D character
+FIX: わたしわ => 私{わたし}は | は (topic) is read "wa"
+JP: 何{なに}を勉強{べんきょう}していますか。
+EN: What are you studying?
+NOTE: 〜ています describes something ongoing.
+NEW: 勉強|べんきょう|study
 ```
 
-- The island is one transparent, always-on-top window that never takes focus on its own.
-  Rust decides when the cursor is over the island and toggles click-through, so clicks outside
-  it reach the apps underneath.
-- Hook events arrive in `pipe.rs`, are forwarded to the page as a `hook` event, and are turned
-  into state by `src/island/hooks.ts`. Views only read `State` (`src/core/state.ts`) and
-  repaint when it notifies.
-- Permission requests are the one place the relay waits: it holds the pipe open until the
-  island answers, and falls back to Claude Code's own prompt if nobody does.
-- The chat assistant runs in `assistant.rs`: it streams the model's answer, runs the tools it
-  asks for, and asks the page for an Allow or Deny card before anything risky.
+Readings in braces become `<ruby>` furigana, and only the `JP` lines are spoken.
+Romaji comes from the readings (`src/study/romaji.ts`).
+
+## Setup
+
+```
+cd windows
+npm install
+npm run tauri dev
+```
+
+Then, in Settings:
+
+1. **Voice (Fish Audio)**: paste an API key from fish.audio. Pick a Japanese voice (the list
+   comes from Fish Audio's public models) and press ▶ Preview. The TTS model defaults to
+   `s2.1-pro-free`, which the free developer tier allows.
+2. **Claude** or **Gemini**: paste a key. "Mochi uses" picks which one teaches.
+
+Keys go to the Windows Credential Manager (Secret Service on Linux), never to disk, under
+the service `fr.louisraille.kotoba`.
 
 ## Layout
 
 ```
 windows/
-  src/
-    core/         state, layout constants, bridge to Rust, keys, snippets, usage, sounds
-    island/       the window controller, open and close state machine, hook handling
-    views/        every island screen (home card, editor, chat, cockpit, upload, settings)
-    mochi/        the character engine, skin rig, skin bundle loader, greeting
-    skineditor/   the skin editor window
-    settings/     the settings window
-    upload/       the file-drop animation
-    highlight/    the click-through ring used by the guided help
+  index.html, src/         the island page: island/, views/, mochi/ (the character), core/
+  src/study/               the study panel (a view of the island): app, conversation, cards, stats,
+                           reply renderer, markup, romaji; its CSS is scoped under `.study-embed`
+  settings.html            Settings (src/settings/)
+  tests/                   `npm test` (Node's built-in runner): markup, romaji, pronunciation, reminder rules
+  src/study/cards.ts       review sessions (study panel and island)
+  src/island/reminders.ts  when Mochi may speak up (a pure function, tested)
   src-tauri/src/
-    lib.rs        app wiring and every command the page can call
-    island.rs     window geometry and the cursor poll
-    pipe.rs       hook transport
-    hooks.rs      reading and writing Claude Code's settings.json
-    assistant.rs, claude.rs, gemini.rs     chat, tools, providers
-    skins.rs      validating, storing and serving imported skins
-    ide.rs        which editor the user works in
-    repo.rs, usage.rs, integrations.rs     what the Home cards read
-    platform/     everything that differs between Windows and Linux
-  hook/           coucou-hook, the relay
-  scripts/        icon generator, packaging, sample skin generator
-  dev/            a looping preview of the file-drop animation
+    lib.rs                 commands and windows
+    tutor.rs               tutor prompt, scenarios, bookkeeping tools
+    learner.rs             learner model, stats, learner.json
+    fishaudio.rs           text-to-speech, speech-to-text, voice list, on-disk clip cache
+    assistant.rs           the model loop (Claude or Gemini, streamed, with tools)
+    claude.rs, gemini.rs   the two providers
 ```
 
-## Working on it
+## Privacy
 
-Requirements are listed in the root README.
+- No account and no telemetry.
+- Your messages and a short summary of your progress go to the AI you chose (Anthropic or
+  Google).
+- Mochi's Japanese lines go to Fish Audio to be spoken, and your recordings go to Fish Audio
+  to be transcribed (only when you press the mic).
+- Text you select goes to your AI only when you press the lookup shortcut.
+- Nothing else leaves the PC. Progress is kept in `%APPDATA%\Kotoba\learner.json`. Voice
+  clips are cached in `%LOCALAPPDATA%\Kotoba\tts-cache` (capped at about 200 MB), so a
+  replay costs no credits.
 
-```powershell
-npm install
-npm run tauri dev       # live-reloading app
-npm run dev             # the front end alone, in an ordinary browser
-npx tsc --noEmit        # type-check
-cargo test --lib        # run from src-tauri/
-npm run pack            # installer in release/
+## Checks
+
 ```
-
-`npm run dev` is enough for most visual work: the pages render in a browser, and calls to Rust
-are no-ops there. The settings window is `settings.html`, the skin editor `skin-editor.html`.
-
-The sounds are the macOS app's files and are never copied into this folder. Their path is
-declared once as `SOUNDS_DIR` at the top of `vite.config.ts`.
-
-Icons are generated in code:
-
-```powershell
-npm run icons           # rewrites src-tauri/icons from scripts/gen-icons.mjs
+cd windows/src-tauri && cargo test
+cd windows && npx tsc --noEmit && npm test
 ```
-
-Sample skins can be generated without any image editor:
-
-```powershell
-node scripts/make-example-skin.mjs
-node skin-samples/make-claude-mascot.mjs
-```
-
-### Local skins
-
-Skins kept outside Git go in `src/mochi/local/`. They load only in development builds, and the
-build blanks that folder so nothing in it can reach a release. Imported skin bundles are the
-supported way to use a skin in a release build.
-
-## Conventions
-
-- No third-party runtime dependencies beyond Tauri, and none added lightly. Rust crates need a
-  reason.
-- Secrets go to the Windows Credential Manager, never to a file or into the page.
-- The relay must never block Claude Code. Anything on that path has a short timeout and exits
-  cleanly.
-- The user's Claude Code settings are never overwritten: dated backup, merge, show the diff,
-  write after a click.
-- Surfaces are separated by fill, tone and spacing, not by light borders. A nested rounded
-  shape takes its parent's radius minus the gap, so the corners stay concentric.
-- Text uses `var(--font)`, which is Inter, bundled with the app and never fetched.
-- A hidden island costs nothing: its animation loop and cursor poll are stopped.
-
-## Files on disk
-
-| Path | Contents |
-|---|---|
-| `%APPDATA%\Coucou\settings.json` | preferences, no secrets |
-| `%LOCALAPPDATA%\Coucou\coucou.log` | hook events, decisions, poller problems |
-| `%LOCALAPPDATA%\Coucou\skins\` | imported skins |
-| `%LOCALAPPDATA%\Coucou\inbox\` | copies of dropped files, removed after a week |
-| `%LOCALAPPDATA%\Coucou\bin\coucou-hook.exe` | the relay, copied at launch |
-
-## Linux
-
-The same code builds for Linux; what differs lives in `src-tauri/src/platform/` and
-`hook/src/unix.rs`.
-
-```bash
-sudo apt install build-essential pkg-config \
-  libwebkit2gtk-4.1-dev libgtk-layer-shell-dev libayatana-appindicator3-dev \
-  librsvg2-dev libssl-dev libdbus-1-dev patchelf \
-  gstreamer1.0-plugins-base gstreamer1.0-plugins-good
-npm install
-npm run tauri dev
-npm run pack            # AppImage, .deb and .rpm in release/
-```
-
-- On compositors with layer-shell (COSMIC, KDE Plasma, Hyprland, Sway) the island is an overlay
-  anchored to the top edge. GNOME has none, so it opens as a normal window. Set
-  `COUCOU_LAYER_SHELL=0` to force that anywhere.
-- Click-through is the window's input region, kept equal to the island's shape.
-- The hook relay talks over a Unix socket at `$XDG_RUNTIME_DIR/coucou.sock`, and both ends
-  check they run as the same user.
-- Keys live in the Secret Service (GNOME Keyring or KWallet).
-- Media control uses `playerctl` and `pactl`, and the assistant says so if they are missing.

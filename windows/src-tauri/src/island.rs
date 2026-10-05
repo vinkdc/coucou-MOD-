@@ -16,9 +16,9 @@ use tauri::{AppHandle, Emitter, Manager, Monitor, PhysicalPosition, PhysicalSize
 
 use crate::platform::{self, cursor_physical, left_button_down};
 
-/// Logical size of the full window — the largest island view, like the macOS panel.
-pub const PANEL_W: f64 = 900.0;
-pub const PANEL_H: f64 = 600.0;
+/// Logical size of the full window — the largest island view (the study panel).
+pub const PANEL_W: f64 = 1060.0;
+pub const PANEL_H: f64 = 700.0;
 
 pub const WINDOW_LABEL: &str = "island";
 

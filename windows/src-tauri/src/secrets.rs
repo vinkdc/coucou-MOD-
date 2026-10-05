@@ -3,20 +3,13 @@
 
 use keyring::Entry;
 
-const SERVICE: &str = "fr.louisraille.coucou";
+const SERVICE: &str = "fr.louisraille.kotoba";
 
-/// Every key Coucou may store. Anything outside this list is refused.
+/// Every key Kotoba may store. Anything outside this list is refused.
 pub const KNOWN_KEYS: &[&str] = &[
     "anthropic-api-key",
     "gemini-api-key",
-    "n8n-url",
-    "n8n-api-key",
-    "vercel-token",
-    "github-token",
-    "stripe-api-key",
-    "resend-api-key",
-    "notion-api-key",
-    "calcom-api-key",
+    "fish-audio-api-key",
 ];
 
 fn entry(key: &str) -> Option<Entry> {

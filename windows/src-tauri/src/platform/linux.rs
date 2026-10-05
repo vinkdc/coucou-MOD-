@@ -23,9 +23,6 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 
 use super::{home_dir, LocalTime};
 
-/// File name of the Claude Code relay.
-pub const HOOK_EXE: &str = "coucou-hook";
-
 /// Environment variable holding the home directory.
 pub const HOME_VAR: &str = "HOME";
 
@@ -40,16 +37,16 @@ fn xdg(var: &str, fallback: &str) -> PathBuf {
         .unwrap_or_else(|| home_dir().join(fallback))
 }
 
-/// ~/.config/coucou — preferences.
+/// ~/.config/kotoba — preferences.
 pub fn config_dir() -> PathBuf {
-    xdg("XDG_CONFIG_HOME", ".config").join("coucou")
+    xdg("XDG_CONFIG_HOME", ".config").join("kotoba")
 }
 
 /// ~/.local/share/coucou — where coucou-hook, the inbox and the log live. The
 /// relay has to sit at a stable path: an AppImage is mounted somewhere new on
 /// every launch.
 pub fn local_dir() -> PathBuf {
-    xdg("XDG_DATA_HOME", ".local/share").join("coucou")
+    xdg("XDG_DATA_HOME", ".local/share").join("kotoba")
 }
 
 /// Environment the webview must inherit, set before any thread or process
@@ -64,7 +61,7 @@ pub fn prepare_environment() {
     if std::env::var_os("APPIMAGE").is_none() || std::env::var_os("GST_REGISTRY").is_some() {
         return;
     }
-    let cache = xdg("XDG_CACHE_HOME", ".cache").join("coucou");
+    let cache = xdg("XDG_CACHE_HOME", ".cache").join("kotoba");
     if std::fs::create_dir_all(&cache).is_ok() {
         std::env::set_var("GST_REGISTRY", cache.join("gstreamer-registry.bin"));
     }
@@ -107,19 +104,6 @@ fn is_private_dir(dir: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Where coucou-hook finds us: `$XDG_RUNTIME_DIR/coucou.sock`, or
-/// `/run/user/<uid>/coucou.sock` when the variable is missing. A directory
-/// that is not ours and private means no relay at all — never a fallback to a
-/// shared place like /tmp. Must match `socket_path()` in hook/src/unix.rs
-/// exactly.
-pub fn relay_socket_path() -> Option<PathBuf> {
-    let dir = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .unwrap_or_else(|| PathBuf::from(format!("/run/user/{}", unsafe { libc::getuid() })));
-    is_private_dir(&dir).then(|| dir.join("coucou.sock"))
-}
-
 // ── Processes ─────────────────────────────────────────────────────────────────
 
 /// Nothing to hide: a spawned process only gets a terminal if it asks for one.
@@ -129,22 +113,6 @@ pub fn no_console(cmd: &mut Command) -> &mut Command {
 
 pub fn open_url(url: &str) {
     let _ = Command::new("xdg-open").arg(url).spawn();
-}
-
-pub fn reveal_folder(path: &str) {
-    let _ = Command::new("xdg-open").arg(path).spawn();
-}
-
-/// Our own `which`: the first executable file named `stem` on $PATH.
-pub fn find_on_path(stem: &str) -> Option<PathBuf> {
-    let dirs = std::env::var_os("PATH")?;
-    std::env::split_paths(&dirs)
-        .map(|dir| dir.join(stem))
-        .find(|p| {
-            std::fs::metadata(p)
-                .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-                .unwrap_or(false)
-        })
 }
 
 // ── Cursor ────────────────────────────────────────────────────────────────────
@@ -161,33 +129,27 @@ pub fn left_button_down() -> bool {
     false
 }
 
-/// GTK hands drops to Tauri directly; nothing to change.
-pub fn allow_webview_drops(_win: &tauri::WebviewWindow) {}
-
-
-// ── Island window ─────────────────────────────────────────────────────────────
-
-/// The few gtk-layer-shell calls we need, straight from the C library.
-mod layer {
-    use gtk::ffi::GtkWindow;
-    use std::os::raw::{c_char, c_int};
-
-    pub const LAYER_OVERLAY: c_int = 3;
-    pub const EDGE_TOP: c_int = 2;
-    pub const EDGE_BOTTOM: c_int = 3;
-    pub const KEYBOARD_NONE: c_int = 0;
-    pub const KEYBOARD_ON_DEMAND: c_int = 2;
-
-    #[link(name = "gtk-layer-shell")]
-    extern "C" {
-        pub fn gtk_layer_is_supported() -> c_int;
-        pub fn gtk_layer_init_for_window(window: *mut GtkWindow);
-        pub fn gtk_layer_set_namespace(window: *mut GtkWindow, name_space: *const c_char);
-        pub fn gtk_layer_set_layer(window: *mut GtkWindow, layer: c_int);
-        pub fn gtk_layer_set_anchor(window: *mut GtkWindow, edge: c_int, anchor: c_int);
-        pub fn gtk_layer_set_exclusive_zone(window: *mut GtkWindow, zone: c_int);
-        pub fn gtk_layer_set_keyboard_mode(window: *mut GtkWindow, mode: c_int);
+/// The text selected in whatever app is in front: the PRIMARY selection, which
+/// holds it without a copy (Wayland through wl-paste, X11 through xclip). Falls
+/// back to the clipboard, so "copy it first" works everywhere.
+pub fn selected_text() -> Result<String, String> {
+    let attempts: [(&str, &[&str]); 4] = [
+        ("wl-paste", &["--primary", "--no-newline"]),
+        ("xclip", &["-o", "-selection", "primary"]),
+        ("wl-paste", &["--no-newline"]),
+        ("xclip", &["-o", "-selection", "clipboard"]),
+    ];
+    for (cmd, args) in attempts {
+        let Ok(out) = Command::new(cmd).args(args).output() else { continue };
+        if !out.status.success() {
+            continue;
+        }
+        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !text.is_empty() {
+            return Ok(text);
+        }
     }
+    Err("Nothing is selected (or wl-clipboard / xclip is not installed). Select some text, then press the shortcut.".into())
 }
 
 /// True once the island window is a layer-shell surface.
@@ -247,7 +209,7 @@ pub fn make_non_activating(win: &WebviewWindow) {
     let ptr = gtk_window_ptr(&gw);
     unsafe {
         layer::gtk_layer_init_for_window(ptr);
-        layer::gtk_layer_set_namespace(ptr, c"coucou".as_ptr());
+        layer::gtk_layer_set_namespace(ptr, c"kotoba".as_ptr());
         layer::gtk_layer_set_layer(ptr, layer::LAYER_OVERLAY);
         // One edge only: the compositor centres the surface horizontally.
         layer::gtk_layer_set_anchor(ptr, edge, 1);
@@ -277,72 +239,9 @@ pub fn make_non_activating(win: &WebviewWindow) {
     crate::log::line("island is a layer-shell overlay");
 }
 
-/// Raising another app's window is the compositor's call on Wayland; "Open
-/// terminal" falls back to the session's folder there.
-pub fn focus_process_window(_pids: &[u32]) -> bool {
-    false
-}
-
-/// The assistant's `launch_app`: an executable on PATH or a full path, else a
-/// desktop entry through gtk-launch. Never through a shell.
-pub fn launch_app(name: &str) -> Result<(), String> {
-    if name.is_empty() {
-        return Err("No app given.".into());
-    }
-    let direct = if name.contains('/') {
-        Some(PathBuf::from(name)).filter(|p| p.is_file())
-    } else {
-        find_on_path(name)
-    };
-    let spawned = match direct {
-        Some(path) => Command::new(path).spawn(),
-        None => Command::new("gtk-launch").arg(name).spawn(),
-    };
-    spawned.map(|_| ()).map_err(|e| format!("Could not open \"{name}\": {e}"))
-}
-
-/// The assistant's `run_command`.
-pub fn shell_command(command: &str) -> Command {
-    let mut cmd = Command::new("sh");
-    cmd.args(["-c", command]);
-    cmd
-}
-
-/// Wayland gives no app the screen without a portal round trip; not yet.
-pub fn screenshot() -> Result<(u32, u32, Vec<u8>), String> {
-    Err("Screenshots aren't supported on Linux yet.".into())
-}
-
-/// Media control through MPRIS (`playerctl`) and the sound server (`pactl`):
-/// whatever is playing answers, and nothing gets opened.
-pub fn media_key(action: &str, times: u32) -> Result<(), String> {
-    let times = times.clamp(1, 25);
-    let (program, args): (&str, Vec<String>) = match action {
-        "play_pause" => ("playerctl", vec!["play-pause".into()]),
-        "next" => ("playerctl", vec!["next".into()]),
-        "previous" => ("playerctl", vec!["previous".into()]),
-        "stop" => ("playerctl", vec!["stop".into()]),
-        "volume_up" => ("pactl", vec!["set-sink-volume".into(), "@DEFAULT_SINK@".into(), format!("+{}%", 2 * times)]),
-        "volume_down" => ("pactl", vec!["set-sink-volume".into(), "@DEFAULT_SINK@".into(), format!("-{}%", 2 * times)]),
-        "mute" => ("pactl", vec!["set-sink-mute".into(), "@DEFAULT_SINK@".into(), "toggle".into()]),
-        other => return Err(format!("Unknown media action {other}.")),
-    };
-    let status = Command::new(program)
-        .args(&args)
-        .status()
-        .map_err(|_| format!("{program} isn't installed, so media can't be controlled here."))?;
-    if status.success() { Ok(()) } else { Err(format!("{program} found nothing to control.")) }
-}
-
 /// No portable "time since the last input" across compositors: report idle.
 pub fn idle_ms() -> u64 {
     u64::MAX
-}
-
-/// Ends a process and everything it started (its children first, then itself).
-pub fn kill_tree(pid: u32) {
-    let _ = Command::new("pkill").args(["-KILL", "-P", &pid.to_string()]).status();
-    let _ = Command::new("kill").args(["-KILL", &pid.to_string()]).status();
 }
 
 /// Wayland and X11 let a window take focus when asked; nothing extra to do.

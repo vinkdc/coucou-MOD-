@@ -25,7 +25,8 @@ pub struct LocalTime {
     pub second: u32,
 }
 
-/// The user's home directory, where `.claude/settings.json` lives.
+/// The user's home directory (the XDG fallbacks on Linux).
+#[allow(dead_code)]
 pub fn home_dir() -> PathBuf {
     std::env::var_os(HOME_VAR)
         .map(PathBuf::from)

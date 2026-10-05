@@ -16,7 +16,7 @@ export const SOUNDS_DIR = resolve(__dirname, "../NotchBuddy/Resources/sounds");
 function sharedSounds(): Plugin {
   const prefix = "/sounds/";
   return {
-    name: "coucou-shared-sounds",
+    name: "kotoba-shared-sounds",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         if (!req.url?.startsWith(prefix)) return next();
@@ -53,7 +53,7 @@ function noLocalSkinsInBuilds(): Plugin {
   // The trailing slash matters: src/mochi/localSkins.ts must not match.
   const local = resolve(__dirname, "src/mochi/local").replace(/\\/g, "/") + "/";
   return {
-    name: "coucou-no-local-skins",
+    name: "kotoba-no-local-skins",
     apply: "build",
     enforce: "pre",
     load(id) {
@@ -88,7 +88,6 @@ export default defineConfig({
         island: resolve(__dirname, "index.html"),
         settings: resolve(__dirname, "settings.html"),
         skinEditor: resolve(__dirname, "skin-editor.html"),
-        highlight: resolve(__dirname, "highlight.html"),
       },
     },
   },

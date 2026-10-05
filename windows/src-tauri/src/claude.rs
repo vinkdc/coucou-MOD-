@@ -18,7 +18,7 @@ const MAX_TOKENS: u32 = 4096;
 /// Text and code files are inlined; anything larger is skipped, as on macOS.
 const MAX_INLINE_TEXT: u64 = 200_000;
 
-pub const DEFAULT_MODEL: &str = "claude-opus-5";
+pub const DEFAULT_MODEL: &str = "claude-opus-5-5";
 
 /// The user's message. File / window context rides along with the first
 /// message only, exactly like ClaudeService.chat().
@@ -42,45 +42,6 @@ pub fn user_message(query: &str, context: Option<&ChatContext>) -> Value {
     }
     content.push(json!({ "type": "text", "text": query }));
     json!({ "role": "user", "content": content })
-}
-
-/// A user message carrying one PNG, for the guide's "Check my step".
-pub fn user_message_with_image(query: &str, png_b64: &str) -> Value {
-    json!({ "role": "user", "content": [
-        { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": png_b64 } },
-        { "type": "text", "text": query },
-    ] })
-}
-
-/// A lean, non-streaming one-shot: no tools, no web search, a short system
-/// prompt and a small output cap. For small side questions (the guide), where
-/// the chat's full tool list would cost more than the question itself.
-pub async fn ask(key: &str, model: &str, system: &str, message: &Value, max_tokens: u32) -> Result<String, String> {
-    let body = json!({
-        "model": model,
-        "max_tokens": max_tokens,
-        "system": system,
-        "fallbacks": "default",
-        "messages": [message],
-    });
-    let reply: Value = call(key, &body)
-        .await?
-        .json()
-        .await
-        .map_err(|e| format!("Unexpected API response: {e}"))?;
-    let text = reply
-        .get("content")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
-        .filter_map(|b| b.get("text").and_then(Value::as_str))
-        .collect::<Vec<_>>()
-        .join("\n");
-    if text.trim().is_empty() {
-        return Err("Unexpected API response.".into());
-    }
-    Ok(text)
 }
 
 fn tool_specs(defs: &[ToolDef]) -> Vec<Value> {
