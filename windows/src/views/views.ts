@@ -12,6 +12,7 @@ import { buildCockpit } from "./cockpit";
 import { buildEditor } from "./editor";
 import { codeLines, miniLines } from "./code";
 import { buildUpload, buildUploading } from "./upload";
+import { buildTools } from "./tools";
 import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
 
 export interface ViewActions {
@@ -103,6 +104,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
   const tabHome = h("button", { class: "tab", title: "Overview", onclick: () => go("overview") }, svg(ICONS.house, 13), h("span", { text: "Home" }));
   const tabChat = h("button", { class: "tab", title: "Ask", onclick: () => go("prompt") }, svg(ICONS.bubble, 13), h("span", { text: "Chat" }));
   const tabDrop = h("button", { class: "tab", title: "Drop", onclick: () => go("upload") }, svg(ICONS.plus, 13), h("span", { text: "File" }));
+  const tabTools = h("button", { class: "tab", title: "Tools", onclick: () => go("tools") }, svg(ICONS.wrench, 13), h("span", { text: "Tools" }));
 
   const snipBtn = h("button", { title: "Snip (also copied to the clipboard)", onclick: () => actions.snip() }, svg(ICONS.hdrSnip, 15, { viewBox: 256 }));
   const gearBtn = h("button", { title: "Settings", onclick: () => go("settings") }, svg(ICONS.hdrGear, 15, { viewBox: 256 }));
@@ -118,7 +120,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
   const el = h(
     "div",
     { id: "header" },
-    h("div", { class: "tabs" }, tabHome, tabChat, tabDrop),
+    h("div", { class: "tabs" }, tabHome, tabChat, tabDrop, tabTools),
     h("div", { class: "header-actions" }, sizeBtn, snipBtn, gearBtn, soundBtn),
   );
 
@@ -129,6 +131,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
       tabHome.classList.toggle("on", v === "overview" || v === "empty" || v === "editor");
       tabChat.classList.toggle("on", v === "prompt");
       tabDrop.classList.toggle("on", v === "upload");
+      tabTools.classList.toggle("on", v === "tools");
       gearBtn.classList.toggle("on", v === "settings");
       clear(gearBtn);
       gearBtn.append(svg(ICONS.hdrGear, 15, { viewBox: 256 }));
@@ -618,6 +621,7 @@ export function buildViews(
   map.set("settings", buildSettings(actions));
   map.set("prompt", buildPrompt(onChatHeightChange, () => actions.releasePin(), () => actions.keepOpen()));
   map.set("upload", buildUpload(actions));
+  map.set("tools", buildTools());
   map.set("uploading", buildUploading());
   // Not in the Windows v1: sending a file by email, window attach + web result.
   map.set("mail", buildPlaceholder("Sending by email isn't in this version.", ""));

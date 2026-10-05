@@ -34,8 +34,7 @@ async function main() {
 
   void Sound.preload();
 
-  const island = new Island(root);
-  const boot = await Bridge.boot();
+  const island = new Island(root);  const boot = await Bridge.boot();
   if (boot) {
     State.settings = { ...State.settings, ...boot.settings };
   }

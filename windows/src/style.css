@@ -404,6 +404,193 @@ body {
   height: 100%;
 }
 
+/* ── Tools tab ─────────────────────────────────────────────────────────── */
+/* Cards are fills, never outlines; rows are a lighter tone of the card. */
+
+.tools-grid {
+  display: flex;
+  gap: 10px;
+  height: 100%;
+}
+
+.tools-grid > .tl-card {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  gap: 6px;
+}
+
+.tl-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  flex: 0 0 18px;
+  padding: 0 2px;
+}
+
+.tl-title {
+  font: 600 12px var(--font);
+  color: var(--ink);
+}
+
+.tl-count {
+  font: 500 11px var(--font);
+  color: var(--dim);
+}
+
+.tl-note {
+  font: 500 11px var(--font);
+  color: #ff8d97;
+  padding: 0 2px;
+}
+
+.tl-note:empty {
+  display: none;
+}
+
+.tl-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tl-empty {
+  margin: auto;
+  font: 500 12px var(--font);
+  color: var(--dim);
+}
+
+.tl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 26px;
+  height: 26px;
+  padding: 0 4px 0 10px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  font: 500 12px var(--font);
+  color: var(--ink-2);
+}
+
+.tl-row:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tl-port {
+  flex: 0 0 auto;
+  font: 600 12px var(--mono);
+  color: var(--ink);
+}
+
+.tl-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dim);
+}
+
+.tl-name.dev {
+  color: var(--ink-2);
+}
+
+.tl-name.script {
+  color: var(--ink);
+}
+
+.tl-kind {
+  flex: 0 0 auto;
+  font: 500 10px var(--font);
+  color: var(--dim);
+}
+
+.tl-btn {
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink-2);
+  font: 500 11px var(--font);
+  cursor: default;
+  transition: background 0.15s ease-out;
+}
+
+.tl-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.tl-btn.armed {
+  background: rgba(244, 80, 94, 0.28);
+  color: #ffb3ba;
+}
+
+.tl-chips {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tl-chip {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 20px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--dim);
+  font: 500 11px var(--font);
+}
+
+.tl-chip.on {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--ink);
+}
+
+.tl-chip button {
+  height: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+}
+
+.tl-chip-main {
+  padding: 0 8px;
+}
+
+.tl-chip-x {
+  padding: 0 6px 0 0;
+  opacity: 0.6;
+}
+
+.tl-chip-x:hover {
+  opacity: 1;
+}
+
+.tl-chip.add {
+  width: 20px;
+  justify-content: center;
+  border: 0;
+  cursor: default;
+}
+
+.tl-chip.add:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .overview > .left {
   flex: 0 0 322px;
   width: 322px;

@@ -152,6 +152,10 @@ export interface Settings {
   userName: string;
   /** Keyboard controls the user rebound, by action id (core/keys.ts). Missing = the default. */
   keys: Record<string, string>;
+  /** Workspace preset that shapes the Tools tab (presets/). */
+  role: string;
+  /** Project folders pinned in the Scripts tool, besides the ones sessions work in. */
+  projects: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -173,6 +177,8 @@ export const DEFAULT_SETTINGS: Settings = {
   skin: "mochi",
   userName: "",
   keys: {},
+  role: "developer",
+  projects: [],
 };
 
 type Listener = () => void;

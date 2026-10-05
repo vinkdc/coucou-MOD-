@@ -22,7 +22,8 @@ export type IslandViewName =
   | "note"
   | "settings"
   | "guide"
-  | "greeting";
+  | "greeting"
+  | "tools";
 
 export type BotStateName =
   | "idle"
@@ -87,6 +88,8 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   note: { height: 160, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
   settings: { height: 160, botX: 54, botY: null, botDiameter: 46, agentMode: "none" },
   guide: { height: 160, botX: 62, botY: null, botDiameter: 56, agentMode: "column" },
+  // The Tools tab: two cards under the header, no character.
+  tools: { height: 240, botX: 0, botY: null, botDiameter: 0, agentMode: "none" },
   greeting: { height: 150, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
 };
 

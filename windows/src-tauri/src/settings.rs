@@ -44,6 +44,16 @@ pub struct Settings {
     /// Keyboard controls the user rebound, by action id; the page checks each one.
     #[serde(default)]
     pub keys: std::collections::HashMap<String, String>,
+    /// Which workspace preset shapes Home and the Tools tab: "developer" for now.
+    #[serde(default = "default_role")]
+    pub role: String,
+    /// Project folders pinned in the Scripts tool, besides the ones sessions work in.
+    #[serde(default)]
+    pub projects: Vec<String>,
+}
+
+fn default_role() -> String {
+    "developer".to_string()
 }
 
 fn default_skin() -> String {
@@ -94,6 +104,8 @@ impl Default for Settings {
             skin: default_skin(),
             user_name: String::new(),
             keys: std::collections::HashMap::new(),
+            role: default_role(),
+            projects: Vec::new(),
         }
     }
 }

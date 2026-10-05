@@ -344,8 +344,8 @@ export class Island {
     State.notify();
   }
 
-  /** Home → Chat → File, in the header's order. */
-  private static readonly TAB_ORDER: IslandViewName[] = ["overview", "prompt", "upload"];
+  /** Home → Chat → File → Tools, in the header's order. */
+  private static readonly TAB_ORDER: IslandViewName[] = ["overview", "prompt", "upload", "tools"];
 
   /** Which header tab the current view belongs to, or -1 (settings, an alert…). */
   private tabIndex(): number {
@@ -353,6 +353,7 @@ export class Island {
     if (v === "overview" || v === "empty" || v === "editor") return 0;
     if (v === "prompt") return 1;
     if (v === "upload" || v === "uploading") return 2;
+    if (v === "tools") return 3;
     return -1;
   }
 

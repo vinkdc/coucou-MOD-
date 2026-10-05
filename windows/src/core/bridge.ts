@@ -31,6 +31,23 @@ export interface BootInfo {
   cursorPoll: boolean;
 }
 
+export interface ListeningPort {
+  port: number;
+  addr: string;
+  pid: number;
+  process: string;
+  /** A known development runtime (node, python …): listed first. */
+  dev: boolean;
+}
+
+export interface ProjectScript {
+  /** npm, pnpm, yarn, bun, cargo or make. */
+  kind: string;
+  name: string;
+  /** What runs: `npm run dev`. */
+  cmd: string;
+}
+
 export const Bridge = {
   boot: () => call<BootInfo>("boot"),
 
@@ -165,6 +182,15 @@ export const Bridge = {
   },
   /** Native "open file" dialog. Null when cancelled (or outside Tauri). */
   pickFile: () => call<string | null>("pick_file"),
+
+  // ── Developer tools ───────────────────────────────────────────────────────
+  pickFolder: () => call<string | null>("pick_folder"),
+  listeningPorts: () => call<ListeningPort[]>("listening_ports"),
+  /** Rejects with why the server could not be stopped. */
+  killPortProcess: (pid: number) => callOrThrow<void>("kill_port_process", { pid }),
+  projectScripts: (dir: string) => call<ProjectScript[]>("project_scripts", { dir }),
+  runScript: (dir: string, kind: string, name: string) =>
+    callOrThrow<void>("run_script", { dir, kind, name }),
 
   // ── Skin bundles ──────────────────────────────────────────────────────────
   skinsList: () => call<SkinInfo[]>("skins_list"),

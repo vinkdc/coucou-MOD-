@@ -52,7 +52,7 @@ fn lookup(process: &str) -> Option<&'static Known> {
 }
 
 /// `(pid, process name)` of everything running.
-fn processes() -> Vec<(u32, String)> {
+pub(crate) fn processes() -> Vec<(u32, String)> {
     #[cfg(windows)]
     let out = {
         let mut cmd = Command::new("tasklist");

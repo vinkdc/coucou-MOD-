@@ -2,6 +2,7 @@
 
 mod assistant;
 mod claude;
+mod devtools;
 mod files;
 mod gemini;
 mod hooks;
@@ -299,6 +300,31 @@ async fn detect_ide(pids: Vec<u32>) -> Option<ide::Ide> {
     tauri::async_runtime::spawn_blocking(move || ide::detect(&pids)).await.ok().flatten()
 }
 
+/// Developer tools tab: what is listening, and stopping one of those servers.
+#[tauri::command]
+async fn listening_ports() -> Vec<devtools::Port> {
+    tauri::async_runtime::spawn_blocking(devtools::listening_ports).await.unwrap_or_default()
+}
+
+#[tauri::command]
+async fn kill_port_process(pid: u32) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || devtools::kill_port_process(pid))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// The scripts a project folder defines (package.json, Cargo.toml, Makefile).
+#[tauri::command]
+fn project_scripts(dir: String) -> Result<Vec<devtools::Script>, String> {
+    devtools::project_scripts(&dir)
+}
+
+/// Runs one of those scripts in a visible terminal. Only a name the folder's own files define.
+#[tauri::command]
+fn run_script(dir: String, kind: String, name: String) -> Result<(), String> {
+    devtools::run_script(&dir, &kind, &name)
+}
+
 #[tauri::command]
 fn quit_app(app: AppHandle) {
     app.exit(0);
@@ -518,6 +544,22 @@ async fn read_snippet(
 #[tauri::command]
 fn ingest_file(path: String) -> Result<DroppedFile, String> {
     files::ingest(&path)
+}
+
+/// A project folder for the Scripts tool; same dialog rules as `pick_file`.
+#[tauri::command]
+async fn pick_folder(app: AppHandle) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let mut dialog = app.dialog().file().set_title("Choose a project folder");
+    if let Some(win) = island::window(&app) {
+        dialog = dialog.set_parent(&win);
+    }
+    dialog.pick_folder(move |path| {
+        let _ = tx.send(path);
+    });
+    let path = rx.await.ok().flatten()?;
+    path.into_path().ok().map(|p| p.to_string_lossy().into_owned())
 }
 
 /// "Choose a file…" — the alternative to dragging one onto the island. Never the
@@ -951,6 +993,11 @@ pub fn run() {
             open_windows_settings,
             open_in_vscode,
             detect_ide,
+            pick_folder,
+            listening_ports,
+            kill_port_process,
+            project_scripts,
+            run_script,
             focus_session,
             quit_app,
             hooks_status,
