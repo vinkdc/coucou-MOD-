@@ -240,6 +240,11 @@ pub fn make_non_activating(win: &WebviewWindow) {
 }
 
 /// No portable "time since the last input" across compositors: report idle.
+/// Replacing text in another app is Windows-only for now.
+pub fn paste_text(_text: &str) -> Result<(), String> {
+    Err("Replacing text works on Windows only.".into())
+}
+
 pub fn idle_ms() -> u64 {
     u64::MAX
 }

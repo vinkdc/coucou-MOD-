@@ -5,7 +5,8 @@
   "windows": [
     "island",
     "settings",
-    "skin-editor"
+    "skin-editor",
+    "askpop"
   ],
   "permissions": [
     "core:default",

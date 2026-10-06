@@ -153,8 +153,16 @@ fn clipboard_has_other_data() -> bool {
 }
 
 fn set_clipboard_text(text: &str) -> bool {
+    set_clipboard_text_as(text, false)
+}
+
+/// Puts `text` on the clipboard. `private` marks it as a throwaway: Windows' clipboard
+/// history (Win+V) and cloud clipboard are told not to record it, so it never shows up
+/// there to be deleted. (The same two flags password managers set.)
+fn set_clipboard_text_as(text: &str, private: bool) -> bool {
+    use ::windows::core::PCWSTR;
     use ::windows::Win32::Foundation::{HANDLE, HGLOBAL};
-    use ::windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData};
+    use ::windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW, SetClipboardData};
     use ::windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
 
     let mut wide: Vec<u16> = text.encode_utf16().collect();
@@ -174,6 +182,25 @@ fn set_clipboard_text(text: &str) -> bool {
             let _ = GlobalUnlock(global);
             // The clipboard owns the memory once SetClipboardData succeeds.
             SetClipboardData(CF_UNICODETEXT, Some(HANDLE(global.0))).ok()?;
+            if private {
+                // Each flag is a DWORD of 0 under a registered format name. A failure here only
+                // means the entry may show in history; the text itself is already on the clipboard.
+                for name in ["CanIncludeInClipboardHistory", "CanUploadToCloudClipboard"] {
+                    let wide_name: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+                    let format = RegisterClipboardFormatW(PCWSTR(wide_name.as_ptr()));
+                    if format == 0 {
+                        continue;
+                    }
+                    if let Ok(flag) = GlobalAlloc(GMEM_MOVEABLE, 4) {
+                        let ptr = GlobalLock(flag) as *mut u32;
+                        if !ptr.is_null() {
+                            ptr.write(0);
+                            let _ = GlobalUnlock(flag);
+                            let _ = SetClipboardData(format, Some(HANDLE(flag.0)));
+                        }
+                    }
+                }
+            }
             Some(())
         })()
         .is_some();
@@ -186,8 +213,8 @@ fn key_down(vk: u16) -> bool {
     unsafe { (GetAsyncKeyState(vk as i32) as u16 & 0x8000) != 0 }
 }
 
-/// Sends Ctrl+C to whatever has the keyboard.
-fn send_copy() {
+/// Sends Ctrl+<letter> to whatever has the keyboard.
+fn send_ctrl(letter: u16) {
     use ::windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VIRTUAL_KEY,
     };
@@ -204,8 +231,7 @@ fn send_copy() {
         },
     };
     const CONTROL: u16 = 0x11;
-    const C: u16 = 0x43;
-    let inputs = [key(CONTROL, false), key(C, false), key(C, true), key(CONTROL, true)];
+    let inputs = [key(CONTROL, false), key(letter, false), key(letter, true), key(CONTROL, true)];
     // SAFETY: `inputs` is a valid array of fully initialised INPUT structs.
     unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
 }
@@ -233,7 +259,7 @@ pub fn selected_text() -> Result<String, String> {
         return Err("Your clipboard holds a picture or files, so I won't overwrite it. Copy the text with Ctrl+C, then press the shortcut again.".into());
     }
     let before = unsafe { GetClipboardSequenceNumber() };
-    send_copy();
+    send_ctrl(0x43); // C
     let mut copied = false;
     for _ in 0..25 {
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -258,6 +284,172 @@ pub fn selected_text() -> Result<String, String> {
         Some(t) if !t.is_empty() => Ok(t),
         _ => Err("Nothing is selected. Select some text, then press the shortcut.".into()),
     }
+}
+
+// ── Clipboard backup ──────────────────────────────────────────────────────────
+
+/// Everything that was on the clipboard, format by format, so it can be put back
+/// exactly (a picture, copied files, rich text, whatever it was).
+pub struct Snapshot(Vec<(u32, Vec<u8>)>);
+
+/// Most a backup may hold; a bigger clipboard is left alone rather than risked.
+const MAX_BACKUP_BYTES: usize = 128 * 1024 * 1024;
+
+#[derive(Debug, PartialEq)]
+enum Plan {
+    Copy,
+    /// Windows rebuilds it from another format on its own.
+    Skip,
+    /// Held as a handle I can't copy faithfully.
+    Refuse,
+}
+
+const CF_BITMAP: u32 = 2;
+const CF_DIB: u32 = 8;
+const CF_PALETTE: u32 = 9;
+const CF_DIBV5: u32 = 17;
+
+/// What to do with one clipboard format. A bitmap or palette is always offered
+/// next to a device-independent bitmap (CF_DIB / CF_DIBV5), which carries the same
+/// picture as plain bytes: that one is copied and Windows rebuilds the rest.
+/// Metafiles, owner-drawn and GDI-object formats are handles to live objects.
+fn plan(format: u32, has_dib: bool) -> Plan {
+    match format {
+        CF_BITMAP | CF_PALETTE if has_dib => Plan::Skip,
+        CF_BITMAP | CF_PALETTE | 3 | 14 | 0x80 | 0x82 | 0x83 | 0x8E | 0x300..=0x3FF => Plan::Refuse,
+        _ => Plan::Copy,
+    }
+}
+
+/// Opens the clipboard, waiting briefly if another app has it.
+fn open_clipboard() -> bool {
+    use ::windows::Win32::System::DataExchange::OpenClipboard;
+    for _ in 0..10 {
+        // SAFETY: no window handle is needed; the clipboard is closed by the caller.
+        if unsafe { OpenClipboard(None) }.is_ok() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    false
+}
+
+/// Copies every format on the clipboard, or says why it can't (then nothing has been touched).
+fn snapshot_clipboard() -> Result<Snapshot, String> {
+    use ::windows::Win32::Foundation::HGLOBAL;
+    use ::windows::Win32::System::DataExchange::{CloseClipboard, EnumClipboardFormats, GetClipboardData};
+    use ::windows::Win32::System::Memory::{GlobalLock, GlobalSize, GlobalUnlock};
+
+    if !open_clipboard() {
+        return Err("Couldn't reach the clipboard.".into());
+    }
+    // SAFETY: the clipboard is open for the whole block; each handle is locked only while it is read.
+    let result = unsafe {
+        (|| {
+            let mut formats = Vec::new();
+            let mut f = EnumClipboardFormats(0);
+            while f != 0 {
+                formats.push(f);
+                f = EnumClipboardFormats(f);
+            }
+            let has_dib = formats.contains(&CF_DIB) || formats.contains(&CF_DIBV5);
+            let mut items = Vec::new();
+            let mut total = 0usize;
+            for f in formats {
+                match plan(f, has_dib) {
+                    Plan::Skip => continue,
+                    Plan::Refuse => return Err("Your clipboard holds something I can't back up, so I left it alone.".to_string()),
+                    Plan::Copy => {}
+                }
+                let Ok(handle) = GetClipboardData(f) else {
+                    return Err("Couldn't read your clipboard, so I left it alone.".to_string());
+                };
+                let global = HGLOBAL(handle.0);
+                let size = GlobalSize(global);
+                if size == 0 {
+                    continue;
+                }
+                total += size;
+                if total > MAX_BACKUP_BYTES {
+                    return Err("Your clipboard is too big to back up, so I left it alone.".to_string());
+                }
+                let ptr = GlobalLock(global) as *const u8;
+                if ptr.is_null() {
+                    return Err("Couldn't read your clipboard, so I left it alone.".to_string());
+                }
+                let bytes = std::slice::from_raw_parts(ptr, size).to_vec();
+                let _ = GlobalUnlock(global);
+                items.push((f, bytes));
+            }
+            Ok(Snapshot(items))
+        })()
+    };
+    // SAFETY: closes the clipboard opened above.
+    let _ = unsafe { CloseClipboard() };
+    result
+}
+
+/// Puts a backup back, replacing whatever is on the clipboard now.
+fn restore_clipboard(snapshot: &Snapshot) -> bool {
+    use ::windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
+    use ::windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, SetClipboardData};
+    use ::windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+
+    if !open_clipboard() {
+        return false;
+    }
+    let mut all = true;
+    // SAFETY: the clipboard is open; the clipboard owns each block once SetClipboardData succeeds.
+    unsafe {
+        let _ = EmptyClipboard();
+        for (format, bytes) in &snapshot.0 {
+            let Ok(global) = GlobalAlloc(GMEM_MOVEABLE, bytes.len()) else {
+                all = false;
+                continue;
+            };
+            let ptr = GlobalLock(global) as *mut u8;
+            if ptr.is_null() {
+                let _ = GlobalFree(Some(global));
+                all = false;
+                continue;
+            }
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len());
+            let _ = GlobalUnlock(global);
+            if SetClipboardData(*format, Some(HANDLE(global.0))).is_err() {
+                let _ = GlobalFree(Some(HGLOBAL(global.0)));
+                all = false;
+            }
+        }
+        let _ = CloseClipboard();
+    }
+    all
+}
+
+/// Replaces the selection in the app in front with `text`: backs up the whole
+/// clipboard, puts the text on it (marked private, so Win+V history never records
+/// it), sends Ctrl+V, then puts everything back exactly as it was: text, a picture,
+/// copied files. (Typing the characters in instead is unreliable with an input
+/// method active.) If the clipboard can't be backed up faithfully, nothing is touched.
+pub fn paste_text(text: &str) -> Result<(), String> {
+    use ::windows::Win32::System::DataExchange::GetClipboardSequenceNumber;
+
+    let backup = snapshot_clipboard()?;
+    if !set_clipboard_text_as(text, true) {
+        // Setting it may already have emptied the clipboard.
+        restore_clipboard(&backup);
+        return Err("Couldn't reach the clipboard.".into());
+    }
+    // SAFETY: no arguments.
+    let ours = unsafe { GetClipboardSequenceNumber() };
+    send_ctrl(0x56); // V
+    // The app reads the clipboard as it handles the paste; give it a moment before restoring.
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    // If the user copied something in those 400 ms, that is the clipboard now: leave it.
+    // SAFETY: no arguments.
+    if unsafe { GetClipboardSequenceNumber() } == ours && !restore_clipboard(&backup) {
+        crate::log::line("clipboard: could not restore every format after replacing a selection");
+    }
+    Ok(())
 }
 
 // ── Island window ─────────────────────────────────────────────────────────────
@@ -499,3 +691,93 @@ pub fn set_activating(win: &WebviewWindow, activating: bool) {
 
 /// Click-through here is the poll's WS_EX_TRANSPARENT toggle, not a region.
 pub fn set_input_region(_win: &WebviewWindow, _rect: Option<(f64, f64, f64, f64)>) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backup_plan_copies_bytes_and_refuses_live_handles() {
+        // A copied picture: the DIB is copied, the bitmap and palette Windows rebuilds.
+        assert_eq!(plan(CF_DIB, true), Plan::Copy);
+        assert_eq!(plan(CF_DIBV5, true), Plan::Copy);
+        assert_eq!(plan(CF_BITMAP, true), Plan::Skip);
+        assert_eq!(plan(CF_PALETTE, true), Plan::Skip);
+        // A bare bitmap handle can't be copied faithfully.
+        assert_eq!(plan(CF_BITMAP, false), Plan::Refuse);
+        // Text, files (CF_HDROP = 15), registered formats such as HTML or PNG (0xC000+): plain bytes.
+        for f in [1, 7, 13, 15, 16, 0xC0A1, 0xC123] {
+            assert_eq!(plan(f, false), Plan::Copy, "format {f}");
+        }
+        // Metafiles, owner-display and GDI-object formats are live handles.
+        for f in [3, 14, 0x80, 0x82, 0x83, 0x8E, 0x300, 0x3FF] {
+            assert_eq!(plan(f, true), Plan::Refuse, "format {f}");
+        }
+    }
+
+    /// Touches the real clipboard, so it only runs on request:
+    /// `cargo test --lib backup_round_trip -- --ignored`. Puts several formats on it,
+    /// runs the backup, the private text and the restore, and checks every format is back.
+    #[test]
+    #[ignore]
+    fn backup_round_trip_keeps_every_format() {
+        use ::windows::core::PCWSTR;
+        use ::windows::Win32::Foundation::{HANDLE, HGLOBAL};
+        use ::windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, RegisterClipboardFormatW, SetClipboardData};
+        use ::windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+
+        let name: Vec<u16> = "KotobaTestFormat".encode_utf16().chain(std::iter::once(0)).collect();
+        let custom = unsafe { RegisterClipboardFormatW(PCWSTR(name.as_ptr())) };
+        let payload: Vec<u8> = (0..=255u8).cycle().take(5000).collect();
+        let put = |format: u32, bytes: &[u8]| unsafe {
+            let global: HGLOBAL = GlobalAlloc(GMEM_MOVEABLE, bytes.len()).unwrap();
+            let ptr = GlobalLock(global) as *mut u8;
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len());
+            let _ = GlobalUnlock(global);
+            SetClipboardData(format, Some(HANDLE(global.0))).unwrap();
+        };
+
+        let original = snapshot_clipboard().expect("back up whatever the clipboard held");
+        assert!(open_clipboard());
+        unsafe { EmptyClipboard().unwrap() };
+        let wide: Vec<u8> = "before".encode_utf16().chain(std::iter::once(0)).flat_map(|u| u.to_le_bytes()).collect();
+        put(13, &wide); // CF_UNICODETEXT
+        put(custom, &payload);
+        unsafe { let _ = CloseClipboard(); }
+
+        let mid = snapshot_clipboard().expect("back up the test clipboard");
+        assert!(set_clipboard_text_as("temporary", true));
+        assert_eq!(clipboard_text().as_deref(), Some("temporary"));
+        assert!(restore_clipboard(&mid));
+
+        let back = snapshot_clipboard().expect("read it again");
+        let get = |snap: &Snapshot, f: u32| snap.0.iter().find(|(id, _)| *id == f).map(|(_, b)| b.clone());
+        assert_eq!(get(&back, custom).as_deref(), Some(payload.as_slice()), "the custom format must come back byte for byte");
+        assert_eq!(clipboard_text().as_deref(), Some("before"));
+        assert!(restore_clipboard(&original), "the user's own clipboard goes back");
+    }
+
+    /// Touches the real clipboard, so it only runs on request:
+    /// `cargo test --lib private_text -- --ignored`. The user's own text is put back.
+    #[test]
+    #[ignore]
+    fn private_text_is_kept_out_of_clipboard_history() {
+        use ::windows::core::PCWSTR;
+        use ::windows::Win32::System::DataExchange::{IsClipboardFormatAvailable, RegisterClipboardFormatW};
+        let flag = |name: &str| {
+            let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+            let id = unsafe { RegisterClipboardFormatW(PCWSTR(wide.as_ptr())) };
+            unsafe { IsClipboardFormatAvailable(id) }.is_ok()
+        };
+        let previous = clipboard_text();
+        assert!(set_clipboard_text_as("private translation", true));
+        let (history, cloud, text) = (flag("CanIncludeInClipboardHistory"), flag("CanUploadToCloudClipboard"), clipboard_text());
+        // A plain copy carries no such flags.
+        assert!(set_clipboard_text_as("plain", false));
+        let plain_has_flag = flag("CanIncludeInClipboardHistory");
+        set_clipboard_text(previous.as_deref().unwrap_or(""));
+        assert!(history && cloud, "the private text must carry both flags");
+        assert_eq!(text.as_deref(), Some("private translation"));
+        assert!(!plain_has_flag);
+    }
+}

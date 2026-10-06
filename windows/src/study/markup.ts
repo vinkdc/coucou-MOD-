@@ -67,6 +67,15 @@ export function parseReply(text: string): Block[] {
   return blocks;
 }
 
+/**
+ * The Japanese lines of a reply, in order, with the keys renderReply (reply.ts) gives
+ * their play buttons. Lines only ever add up as a reply streams in, so a prefix of the
+ * text gives a prefix of these.
+ */
+export function spokenLines(text: string, keyPrefix: string): { text: string; key: string }[] {
+  return parseReply(text).flatMap((b, i) => (b.kind === "jp" ? [{ text: plainJapanese(b.text), key: `${keyPrefix}:${i}` }] : []));
+}
+
 // ── Furigana ──────────────────────────────────────────────────────────────────
 
 export interface Segment {

@@ -88,6 +88,7 @@ export default defineConfig({
         island: resolve(__dirname, "index.html"),
         settings: resolve(__dirname, "settings.html"),
         skinEditor: resolve(__dirname, "skin-editor.html"),
+        askpop: resolve(__dirname, "askpop.html"),
       },
     },
   },

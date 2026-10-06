@@ -131,9 +131,9 @@ export class Stage {
     x.save();
     x.translate(this.panX, this.panY);
     const pw = doc.w * this.zoom, ph = doc.h * this.zoom;
-    x.fillStyle = "#1a1c20";
+    x.fillStyle = "#2c2c2e";
     x.fillRect(0, 0, pw, ph);
-    x.fillStyle = "#22252a";
+    x.fillStyle = "#2c2c2e";
     const cell = 12;
     x.beginPath();
     for (let j = 0; j * cell < ph; j++) for (let i = (j % 2); i * cell < pw; i += 2) {
@@ -157,12 +157,12 @@ export class Stage {
       const part = doc.parts[focus.index];
       const img = part && pool.get(part.img);
       if (part && img) {
-        x.strokeStyle = "rgba(99, 179, 255, 0.9)";
+        x.strokeStyle = "rgba(10,132,255, 0.9)";
         x.setLineDash([6 / this.zoom, 4 / this.zoom]);
         x.strokeRect(part.x, part.y, img.width * part.scale, img.height * part.scale);
         x.setLineDash([]);
         if (part.motion === "bend") {
-          x.strokeStyle = "rgba(245, 165, 36, 0.9)";
+          x.strokeStyle = "rgba(255,159,10, 0.9)";
           x.beginPath();
           x.moveTo(part.pivot[0], part.pivot[1]);
           x.lineTo(part.pivot[0], part.tipY);
@@ -179,7 +179,7 @@ export class Stage {
       const sx = this.panX + hd.x * this.zoom, sy = this.panY + hd.y * this.zoom;
       const on = hd === this.hover || hd === this.dragging?.handle;
       x.fillStyle = hd.colour;
-      x.strokeStyle = "#0b0c0e";
+      x.strokeStyle = "#000000";
       x.lineWidth = 2;
       x.beginPath();
       const s = on ? 7 : 5.5;
@@ -198,7 +198,7 @@ export class Stage {
         const tw = x.measureText(hd.label).width;
         x.fillStyle = "rgba(11, 12, 14, 0.85)";
         x.fillRect(sx + 10, sy - 20, tw + 10, 18);
-        x.fillStyle = "#f5f6f8";
+        x.fillStyle = "#ffffff";
         x.fillText(hd.label, sx + 15, sy - 7);
       }
     }
@@ -220,7 +220,7 @@ export class Stage {
     body.closePath();
     x.fillStyle = "rgba(237, 237, 239, 0.16)";
     x.fill(body);
-    x.strokeStyle = "rgba(99, 179, 255, 0.9)";
+    x.strokeStyle = "rgba(10,132,255, 0.9)";
     x.stroke(body);
     x.fillStyle = "rgba(26, 20, 18, 0.7)";
     for (const side of [-1, 1]) {
@@ -228,7 +228,7 @@ export class Stage {
       x.ellipse(centerX + side * EYE_SIDE * kx, eyeLine, (EYE_W * kx) / 2, (EYE_H * ky) / 2, 0, 0, Math.PI * 2);
       x.fill();
     }
-    x.strokeStyle = "rgba(245, 165, 36, 0.9)";
+    x.strokeStyle = "rgba(255,159,10, 0.9)";
     x.setLineDash([6 / this.zoom, 4 / this.zoom]);
     x.beginPath();
     x.moveTo(centerX - BODY_RX * kx * 1.1, eyeLine);
@@ -250,7 +250,7 @@ export class Stage {
       if (img) {
         const w = img.width * part.scale, h = img.height * part.scale;
         out.push({
-          x: part.x + w, y: part.y + h, shape: "square", colour: "#63b3ff", label: "Resize", cursor: "nwse-resize",
+          x: part.x + w, y: part.y + h, shape: "square", colour: "#0a84ff", label: "Resize", cursor: "nwse-resize",
           grab: () => ({ x: part.x, y: part.y, scale: part.scale }),
           drag: (nx, ny, s) => {
             const g = s.snapshot as { x: number; y: number; scale: number };
@@ -260,10 +260,10 @@ export class Stage {
         });
       }
       if (part.motion !== "still") {
-        out.push(this.point(part.pivot, "#f5a524", part.motion === "bend" ? "Root (stays put)" : "Swings from here"));
+        out.push(this.point(part.pivot, "#ff9f0a", part.motion === "bend" ? "Root (stays put)" : "Swings from here"));
         if (part.motion === "bend") {
           out.push({
-            x: part.pivot[0], y: part.tipY, shape: "dot", colour: "#f5a524", label: "Tip (moves most)", cursor: "ns-resize",
+            x: part.pivot[0], y: part.tipY, shape: "dot", colour: "#ff9f0a", label: "Tip (moves most)", cursor: "ns-resize",
             drag: (_x, y) => (part.tipY = Math.max(y, part.pivot[1] + 4)),
           });
         }
@@ -272,18 +272,18 @@ export class Stage {
       const f = doc.fit;
       const cy = f.eyeLine - EYE_DROP * f.height;
       out.push({
-        x: f.centerX, y: f.eyeLine, shape: "ring", colour: "#63b3ff", label: "Move Mochi (eye line)", cursor: "move",
+        x: f.centerX, y: f.eyeLine, shape: "ring", colour: "#0a84ff", label: "Move Mochi (eye line)", cursor: "move",
         drag: (x, y) => {
           f.centerX = x;
           f.eyeLine = y;
         },
       });
       out.push({
-        x: f.centerX + BODY_RX * f.width, y: cy, shape: "dot", colour: "#63b3ff", label: "Mochi's width", cursor: "ew-resize",
+        x: f.centerX + BODY_RX * f.width, y: cy, shape: "dot", colour: "#0a84ff", label: "Mochi's width", cursor: "ew-resize",
         drag: (x) => (f.width = Math.max(20, (x - f.centerX) / BODY_RX)),
       });
       out.push({
-        x: f.centerX, y: cy + BODY_RY * f.height, shape: "square", colour: "#63b3ff", label: "Mochi's height", cursor: "ns-resize",
+        x: f.centerX, y: cy + BODY_RY * f.height, shape: "square", colour: "#0a84ff", label: "Mochi's height", cursor: "ns-resize",
         drag: (_x, y) => (f.height = Math.max(20, (y - f.eyeLine) / (BODY_RY - EYE_DROP))),
       });
     }

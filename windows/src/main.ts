@@ -130,6 +130,14 @@ async function main() {
       island.showLookup(e.text ?? "", e.error);
       return;
     }
+    if (e.action === "ask") {
+      island.askAbout(e.text);
+      return;
+    }
+    if (e.action === "listen") {
+      island.listenTo(e.text);
+      return;
+    }
     // Pressed again, it puts the island (or the study panel) away.
     if (State.mode === "expanded") {
       island.collapse();

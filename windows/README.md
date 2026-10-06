@@ -28,6 +28,15 @@ not part of Kotoba.
 
 ## Learning in the flow of your day
 
+- **Select text, ask Mochi** (Windows). Select text in any app and a small popup appears with
+  *Explain*, *Ask…* (quotes it in the chat) and *Listen*. In a text field (a chat box) it adds
+  *Japanese*: it translates what you selected and replaces it in place. Your clipboard is backed
+  up whole (text, a picture, copied files) and put back exactly afterwards, and the translation
+  is kept out of Win+V history; if something on it can't be backed up faithfully, nothing is touched. The popup never takes the
+  keyboard from the app you are in. It reads the selection through
+  Windows UI Automation: no clipboard, no simulated keys, never in terminals, password
+  managers or password fields (add more apps to skip in Settings). Turn it off in Settings →
+  *Ask Mochi popup*. Some apps (games, remote desktops) expose no text, so no popup there.
 - **Look up anything on screen.** Select Japanese (or English) in any app and press
   `Ctrl+Alt+J`: the island shows the reading, meaning and a short breakdown, reads it aloud,
   and `+ word` chips add the new words to your reviews. Kotoba copies the selection with
@@ -122,7 +131,8 @@ windows/
   Google).
 - Mochi's Japanese lines go to Fish Audio to be spoken, and your recordings go to Fish Audio
   to be transcribed (only when you press the mic).
-- Text you select goes to your AI only when you press the lookup shortcut.
+- Text you select goes to your AI (or Fish Audio, for *Listen*) only when you press the lookup
+  shortcut or a button of the selection popup; until then it stays in memory.
 - Nothing else leaves the PC. Progress is kept in `%APPDATA%\Kotoba\learner.json`. Voice
   clips are cached in `%LOCALAPPDATA%\Kotoba\tts-cache` (capped at about 200 MB), so a
   replay costs no credits.

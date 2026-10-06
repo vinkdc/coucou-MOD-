@@ -11,11 +11,12 @@ import {
 } from "../core/layout";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
-import { level as voiceLevel, onVoiceChange, stop as stopVoice } from "../core/voice";
+import { level as voiceLevel, onVoiceChange, speak } from "../core/voice";
 import { BotEngine } from "../mochi/engine";
 import { RibbonSkin } from "../mochi/skin";
 import { bundleId, loadBundle } from "../mochi/bundles";
-import { askInChat } from "../views/chat";
+import { askInChat, prefillChat } from "../views/chat";
+import { hideAskPopup, installAskPopup } from "../views/askpopup";
 import { binding, comboFromEvent, isBare } from "../core/keys";
 import { Greeting } from "../mochi/greeting";
 import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../views/views";
@@ -150,6 +151,17 @@ export class Island {
       },
     };
 
+    // Select text in a message: Explain it at once, or quote it in the chat field to ask.
+    const toChat = (then: () => void) => {
+      if (State.view !== "prompt") this.setView("prompt");
+      window.setTimeout(then, State.view === "prompt" ? 0 : 90);
+    };
+    installAskPopup({
+      explain: (q) => toChat(() => askInChat(`What does 「${q}」 mean? Explain it simply.`)),
+      ask: (q) => toChat(() => prefillChat(`「${q}」 `)),
+      keepOpen: () => this.keepOpen(),
+    });
+
     this.botGlow = h("div", { id: "bot-glow" });
     this.botCanvas = h("canvas", { id: "bot-canvas" });
     this.greetingCanvas = h("canvas", { id: "greeting-canvas" });
@@ -178,6 +190,7 @@ export class Island {
 
   private wireFsm() {
     this.fsm.homeToPetitDelay = State.settings.autoCloseInterval;
+    this.fsm.holdOpen = () => this.engine.speaking;
     this.fsm.onTransition = (from, to) => {
       switch (to) {
         case "hidden":
@@ -223,12 +236,12 @@ export class Island {
       }
     }
     if (prev === "expanded") {
+      hideAskPopup();
       Sound.play("close");
       State.isPinned = false;
       this.userFocused = false;
       void Bridge.focusWindow(false);
-      // A line still being read aloud belongs to an island that is gone.
-      stopVoice();
+      // A line still being read aloud carries on: Mochi finishes it in the compact island.
     }
     if (mode !== "expanded") this.engine.resetMorph();
     this.syncWindowVisibility();
@@ -297,6 +310,7 @@ export class Island {
       State.isPinned = view === "study";
       this.fsm.pinned = State.isPinned;
     }
+    hideAskPopup();
     const grew = VIEW_LAYOUTS[view].height >= VIEW_LAYOUTS[State.view].height;
     State.view = view;
     State.lastActivity = performance.now();
@@ -339,6 +353,21 @@ export class Island {
   showLookup(text: string, error?: string) {
     State.lookup = { text, error, token: (State.lookup?.token ?? 0) + 1 };
     this.alert("lookup");
+  }
+
+  /** Text selected in another app, quoted in the chat field to ask about (the selection popup's "Ask…"). */
+  askAbout(text: string) {
+    this.alert("prompt");
+    window.setTimeout(() => prefillChat(`「${text}」 `), 120);
+  }
+
+  /** Reads selected text aloud (the popup's "Listen"): Mochi peeks out and speaks, then leaves. */
+  listenTo(text: string) {
+    this.reveal();
+    speak(text, { key: "selection" }).catch((err) => {
+      State.noteMessage = String(err.message ?? err);
+      this.alert("note");
+    });
   }
 
   /** A short review session: from Home, or offered by a reminder. */

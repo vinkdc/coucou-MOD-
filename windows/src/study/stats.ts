@@ -1,17 +1,18 @@
-// Stats: where the learner stands. Headline numbers as tiles, then the level
+// Stats: where the learner stands. A level hero and vocabulary/accuracy cards, a quiet habit strip, then the level
 // trend, twelve weeks of activity, what kinds of mistakes come up, and the
 // words that need work. Charts are inline SVG drawn here, no library.
 
 import { h, clear } from "../views/dom";
-import { icon, type IconName } from "../views/phosphor";
+import { icon } from "../views/phosphor";
 import type { DayStat, Stats } from "../core/bridge";
 import { playButton } from "./reply";
 import type { StudyContext } from "./app";
+import { buildMemory } from "./memory";
 
 const NS = "http://www.w3.org/2000/svg";
 
 /** One-hue sequential ramp (blue), stepped for the dark surface: 0 → most. */
-const HEAT = ["#1c1e22", "#184f95", "#256abf", "#3987e5", "#86b6ef"];
+const HEAT = ["#1c1c1e", "#173656", "#13508e", "#0e6ac6", "#0a84ff"];
 
 function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number>): SVGElementTagNameMap[K] {
   const e = document.createElementNS(NS, tag);
@@ -53,13 +54,68 @@ const fmtMinutes = (m: number) => (m < 1 ? `${Math.round(m * 60)} s` : m < 60 ? 
 
 // ── Pieces ────────────────────────────────────────────────────────────────────
 
-function tile(label: string, value: string, sub: string, glyph?: IconName): HTMLElement {
+function vLabel(label: string): HTMLElement {
+  return h("div", { class: "v-label", text: label });
+}
+
+/** Level is the headline: the score on a 0–100 track, then Mochi's reasoning. */
+function heroLevel(st: Stats): HTMLElement {
+  const score = Math.max(0, Math.min(100, Math.round(st.level.score)));
+  return h(
+    "section",
+    { class: "v-card v-hero" },
+    vLabel("Level"),
+    h("div", { class: "v-score" }, h("span", { class: "v-big", text: String(score) }), h("span", { class: "v-of", text: "/ 100" })),
+    h("div", { class: "v-track", role: "img", "aria-label": `Level ${score} of 100` }, h("i", { style: `width:${score}%` })),
+    h("div", { class: "v-sub", text: st.level.label }),
+    st.level.reason ? h("p", { class: "v-take" }, h("b", { text: "Mochi's take  " }), h("span", { text: st.level.reason })) : null,
+  );
+}
+
+/** Words: the count, split into solid / still learning / needing review. */
+function vocabCard(st: Stats): HTMLElement {
+  const learning = Math.max(0, st.words - st.solid - st.weak);
+  const pct = (n: number) => (st.words > 0 ? (n / st.words) * 100 : 0);
+  const seg = (cls: string, n: number) => (n > 0 ? h("i", { class: cls, style: `width:${pct(n)}%` }) : null);
+  return h(
+    "section",
+    { class: "v-card" },
+    vLabel("Words"),
+    h("div", { class: "v-value", text: String(st.words) }),
+    h("div", { class: "v-split", role: "img", "aria-label": `${st.solid} solid, ${learning} learning, ${st.weak} to review` }, seg("solid", st.solid), seg("learning", learning), seg("weak", st.weak)),
+    h("div", { class: "v-key" }, h("span", { class: "solid", text: `${st.solid} solid` }), h("span", { class: "learning", text: `${learning} learning` }), h("span", { class: "weak", text: `${st.weak} to review` })),
+  );
+}
+
+/** Accuracy: a ring, so it reads as a share rather than another number. */
+function accuracyCard(st: Stats): HTMLElement {
+  const R = 20;
+  const C = 2 * Math.PI * R;
+  const share = st.accuracy30 ?? 0;
+  const svg = el("svg", { viewBox: "0 0 50 50", width: 50, height: 50, class: "v-ring", "aria-hidden": "true" });
+  svg.append(el("circle", { cx: 25, cy: 25, r: R, class: "track" }));
+  svg.append(el("circle", { cx: 25, cy: 25, r: R, class: "fill", "stroke-dasharray": `${share * C} ${C}`, transform: "rotate(-90 25 25)" }));
+  return h(
+    "section",
+    { class: "v-card v-accuracy" },
+    svg,
+    h("div", {}, vLabel("Accuracy"), h("div", { class: "v-value", text: st.accuracy30 == null ? "—" : `${Math.round(share * 100)}%` }), h("div", { class: "v-sub", text: "Last 30 days" })),
+  );
+}
+
+/** Streak, time and speaking: quieter facts, set inline with no box around them. */
+function habitStrip(st: Stats): HTMLElement {
+  const week = st.activity.slice(-7);
+  const dots = h("div", { class: "v-week", "aria-hidden": "true" }, ...week.map((d) => h("i", { class: d.minutes > 0 ? "on" : "", title: fmtDate(d.date) })));
+  const item = (label: string, value: string, sub: string, extra?: HTMLElement) =>
+    h("div", { class: "v-item" }, vLabel(label), h("div", { class: "v-mid" }, value), extra ?? null, h("div", { class: "v-sub", text: sub }));
+  const speaking = st.speakingAvg30 == null ? "—" : `${Math.round(st.speakingAvg30 * 100)}%`;
   return h(
     "div",
-    { class: "tile" },
-    h("div", { class: "tile-label" }, glyph ? icon(glyph, 12) : null, h("span", { text: label })),
-    h("div", { class: "tile-value", text: value }),
-    h("div", { class: "tile-sub", text: sub }),
+    { class: "v-strip" },
+    item("Streak", `${st.streak} day${st.streak === 1 ? "" : "s"}`, `Best ${st.bestStreak}`, dots),
+    item("Time", fmtMinutes(st.totalMinutes), `${fmtMinutes(st.todayMinutes)} today`),
+    item("Speaking", speaking, st.speaking30 ? `${st.speaking30} attempt${st.speaking30 === 1 ? "" : "s"} · 30 days` : "Try the mic on a line"),
   );
 }
 
@@ -213,6 +269,8 @@ function kindBars(stats: Stats): HTMLElement {
 
 export function buildStats(ctx: StudyContext, practise: (text: string) => void) {
   const root = h("div", { class: "stats" });
+  // Loads itself and follows "memory-changed"; re-placed on every render.
+  const memory = buildMemory();
   document.body.append(tip);
 
   function render() {
@@ -223,20 +281,7 @@ export function buildStats(ctx: StudyContext, practise: (text: string) => void) 
       root.append(h("div", { class: "chart-empty", text: "Stats appear once Kotoba is running." }));
       return;
     }
-    const acc = st.accuracy30 == null ? "—" : `${Math.round(st.accuracy30 * 100)}%`;
-    root.append(
-      h(
-        "div",
-        { class: "tiles" },
-        tile("Level", `${Math.round(st.level.score)}`, `${st.level.label} · of 100`, "sparkle"),
-        tile("Streak", `${st.streak} day${st.streak === 1 ? "" : "s"}`, `Best ${st.bestStreak}`, "flame"),
-        tile("Words", `${st.words}`, `${st.solid} solid · ${st.weak} to review`, "book-open"),
-        tile("Accuracy", acc, "Last 30 days", "target"),
-        tile("Time", fmtMinutes(st.totalMinutes), `${fmtMinutes(st.todayMinutes)} today`, "clock"),
-        tile("Speaking", st.speakingAvg30 == null ? "—" : `${Math.round(st.speakingAvg30 * 100)}%`, st.speaking30 ? `${st.speaking30} attempt${st.speaking30 === 1 ? "" : "s"} · 30 days` : "Try the mic on a line", "microphone"),
-      ),
-    );
-    if (st.level.reason) root.append(h("div", { class: "level-reason" }, h("b", { text: "Mochi's take  " }), h("span", { text: st.level.reason })));
+    root.append(h("div", { class: "vitals" }, heroLevel(st), vocabCard(st), accuracyCard(st), habitStrip(st)));
 
     const grid = h("div", { class: "panels" });
     grid.append(
@@ -250,7 +295,7 @@ export function buildStats(ctx: StudyContext, practise: (text: string) => void) 
       panel("Mistakes", "By kind, all time", kindBars(st)),
       panel("To review", "Words that need another go", weakList(st)),
     );
-    root.append(grid);
+    root.append(grid, memory.el);
 
     if (st.recentMistakes.length) {
       const list = h("div", { class: "mistakes" });

@@ -21,18 +21,30 @@ pub struct Chat {
     messages: Mutex<Vec<Value>>,
     /// Which provider the history belongs to; switching starts over.
     provider: Mutex<String>,
+    /// How much of the history a session recap already covers.
+    recapped: Mutex<usize>,
 }
 
 impl Chat {
     pub fn reset(&self) {
         self.messages.lock().unwrap().clear();
+        *self.recapped.lock().unwrap() = 0;
+    }
+
+    /// The messages no recap has covered yet; they count as covered from now on.
+    pub fn take_unrecapped(&self) -> Vec<Value> {
+        let messages = self.messages.lock().unwrap();
+        let mut recapped = self.recapped.lock().unwrap();
+        let from = (*recapped).min(messages.len());
+        *recapped = messages.len();
+        messages[from..].to_vec()
     }
 
     fn adopt(&self, provider: &str) {
         let mut current = self.provider.lock().unwrap();
         if *current != provider {
             *current = provider.to_string();
-            self.messages.lock().unwrap().clear();
+            self.reset();
         }
     }
 

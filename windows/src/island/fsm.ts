@@ -21,6 +21,8 @@ export class IslandStateMachine {
   greetHoverCollapseDelay = 10;
   /** An alert waiting for an answer stays open, even when the mouse leaves. */
   pinned = false;
+  /** While this says so (Mochi is still speaking), the compact island waits before hiding. */
+  holdOpen: () => boolean = () => false;
 
   private petitHide: number | null = null;
   private homeCollapse: number | null = null;
@@ -104,12 +106,15 @@ export class IslandStateMachine {
 
   // ── Timers ──────────────────────────────────────────────────────────────────
 
-  private schedulePetitHide() {
+  private schedulePetitHide(delay = this.petitToHiddenDelay) {
     this.clear("petitHide");
     this.petitHide = window.setTimeout(() => {
       this.petitHide = null;
-      if (this.state === "petit") this.transition("hidden");
-    }, this.petitToHiddenDelay * 1000);
+      if (this.state !== "petit") return;
+      // Let Mochi finish its sentence, then go.
+      if (this.holdOpen()) this.schedulePetitHide(0.5);
+      else this.transition("hidden");
+    }, delay * 1000);
   }
 
   private scheduleHomeCollapse() {

@@ -4,17 +4,17 @@
 :root {
   color-scheme: dark;
   --font: "Inter Variable", system-ui, "Segoe UI Variable Text", "Segoe UI", sans-serif;
-  --ink: #f5f6f8;
-  --dim: #9398a1;
-  --dim-2: #6b7079;
-  --bg: #0b0c0e;
-  --card: #141518;
-  --well: #0e0f11;
+  --ink: #ffffff;
+  --dim: #8e8e93;
+  --dim-2: #636366;
+  --bg: #000000;
+  --card: #1c1c1e;
+  --well: #1c1c1e;
   --fill: rgba(255, 255, 255, 0.07);
   --fill-2: rgba(255, 255, 255, 0.12);
-  --blue: #63b3ff;
-  --green: #22c55e;
-  --red: #f4505e;
+  --blue: #0a84ff;
+  --green: #30d158;
+  --red: #ff453a;
   /* Concentric corners: panel 14, its rows (8 px in) 6. */
   --panel-radius: 14px;
   --row-radius: 6px;
@@ -65,7 +65,7 @@ button:active:not(:disabled) {
 
 button.primary {
   background: var(--ink);
-  color: #0b0c0e;
+  color: #000000;
 }
 
 button.primary:hover:not(:disabled) {
@@ -290,7 +290,7 @@ input[type="checkbox"] {
 }
 
 .item.on {
-  background: rgba(99, 179, 255, 0.14);
+  background: rgba(10,132,255, 0.14);
 }
 
 .item canvas {
@@ -323,8 +323,8 @@ input[type="checkbox"] {
 }
 
 .seg button.on {
-  background: rgba(99, 179, 255, 0.22);
-  color: #cfe6ff;
+  background: rgba(10,132,255, 0.22);
+  color: #0a84ff;
 }
 
 /* Canvas */
@@ -353,7 +353,7 @@ input[type="checkbox"] {
 }
 
 body.dragging .canvas-area {
-  background: #16202c;
+  background: #1c1c1e;
 }
 
 .drop-note {
@@ -443,9 +443,9 @@ body.dragging .canvas-area {
 }
 
 .status.ok {
-  color: #86efac;
+  color: #30d158;
 }
 
 .status.err {
-  color: #ff8d97;
+  color: #ff453a;
 }

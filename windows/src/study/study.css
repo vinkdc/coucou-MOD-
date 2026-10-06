@@ -11,21 +11,21 @@
   --font-ja: "Inter Variable", "Yu Gothic UI", "Yu Gothic", "Meiryo", "Hiragino Sans", "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
 
   --bg: #000;
-  --panel: #070708;
-  --card: #0e0f11;
-  --card-2: #17181b;
-  --well: #030304;
+  --panel: #000000;
+  --card: #1c1c1e;
+  --card-2: #2c2c2e;
+  --well: #000000;
   --groove: rgba(0, 0, 0, 0.45);
-  --ink: #f5f6f8;
-  --ink-2: #d9dce1;
-  --dim: #9398a1;
-  --dim-2: #8a8f98;
-  --accent: #f27a93;      /* sakura: Mochi's colour */
-  --accent-fill: rgba(242, 122, 147, 0.14);
-  --blue: #3987e5;
-  --green: #34d399;
-  --amber: #f5a524;
-  --red: #f4505e;
+  --ink: #ffffff;
+  --ink-2: #e5e5ea;
+  --dim: #8e8e93;
+  --dim-2: #8e8e93;
+  --accent: #0a84ff;      /* Apple blue */
+  --accent-fill: rgba(10,132,255, 0.14);
+  --blue: #0a84ff;
+  --green: #30d158;
+  --amber: #ff9f0a;
+  --red: #ff453a;
 
   /* Concentric radii: 18 outer, 12 inside a 6 px gap, 8 inside another 4. */
   --r-outer: 18px;
@@ -306,13 +306,13 @@
 
 
 .study-embed .play-btn:hover {
-  background: #262930;
+  background: #3a3a3c;
 }
 
 
 .study-embed .play-btn.playing {
   background: var(--accent);
-  color: #1a0d10;
+  color: #ffffff;
 }
 
 
@@ -340,7 +340,7 @@
 
 
 .study-embed .fix-card {
-  background: rgba(245, 165, 36, 0.09);
+  background: rgba(255,159,10, 0.09);
   border-radius: var(--r-inner);
   padding: 10px 12px;
   display: flex;
@@ -361,7 +361,7 @@
 .study-embed .fix-said {
   color: var(--dim);
   text-decoration: line-through;
-  text-decoration-color: rgba(244, 80, 94, 0.7);
+  text-decoration-color: rgba(255,69,58, 0.7);
   font-size: 15px;
 }
 
@@ -518,8 +518,8 @@
   margin: 0 28px 8px;
   padding: 9px 12px;
   border-radius: var(--r-card);
-  background: rgba(244, 80, 94, 0.12);
-  color: #ffb3bb;
+  background: rgba(255,69,58, 0.12);
+  color: #0a84ff;
   font-size: 13px;
 }
 
@@ -628,7 +628,7 @@
 
 .study-embed .send-btn.ready {
   background: var(--accent);
-  color: #1a0d10;
+  color: #ffffff;
 }
 
 
@@ -834,56 +834,225 @@
 }
 
 
-.study-embed .tiles {
+/* Progress headline: Apple dark-mode system colours, quiet labels, large numerals. */
+.study-embed .vitals {
+  --sys-blue: #0a84ff;
+  --sys-green: #30d158;
+  --sys-orange: #ff9f0a;
+  --label-2: rgba(235, 235, 245, 0.6);
+  --label-3: rgba(235, 235, 245, 0.3);
+  --fill-3: rgba(120, 120, 128, 0.24);
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
   gap: 10px;
 }
 
 
-.study-embed .tile {
+.study-embed .v-card {
   background: var(--card);
   border-radius: var(--r-card);
-  padding: 14px 16px;
-}
-
-
-.study-embed .tile-label {
+  padding: 16px 18px;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--dim);
+  flex-direction: column;
+  gap: 8px;
 }
 
 
-.study-embed .tile-value {
-  font-size: 26px;
+.study-embed .v-hero {
+  grid-row: span 2;
+  padding: 20px 22px;
+  gap: 12px;
+}
+
+
+.study-embed .v-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--label-2);
+}
+
+
+.study-embed .v-score {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+
+.study-embed .v-big {
+  font-size: 72px;
+  line-height: 1;
   font-weight: 600;
-  letter-spacing: -0.02em;
-  margin-top: 4px;
+  letter-spacing: -0.04em;
   font-variant-numeric: tabular-nums;
 }
 
 
-.study-embed .tile-sub {
-  font-size: 12px;
-  color: var(--dim);
+.study-embed .v-of {
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--label-3);
 }
 
 
-.study-embed .level-reason {
-  background: var(--card);
-  border-radius: var(--r-card);
-  padding: 10px 16px;
-  color: var(--ink-2);
-  font-size: 13px;
+.study-embed .v-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--fill-3);
+  overflow: hidden;
 }
 
 
-.study-embed .level-reason b {
-  color: var(--accent);
+.study-embed .v-track i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--sys-blue);
+}
+
+
+.study-embed .v-value {
+  font-size: 34px;
+  line-height: 1.1;
   font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+
+.study-embed .v-sub {
+  font-size: 13px;
+  color: var(--label-2);
+}
+
+
+.study-embed .v-hero .v-sub {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+
+.study-embed .v-take {
+  margin-top: auto;
+  padding-top: 8px;
+  color: var(--label-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+
+.study-embed .v-take b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+
+.study-embed .v-split {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--fill-3);
+}
+
+
+.study-embed .v-split i.solid { background: var(--sys-green); }
+.study-embed .v-split i.learning { background: var(--sys-blue); }
+.study-embed .v-split i.weak { background: var(--sys-orange); }
+
+
+.study-embed .v-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  font-size: 13px;
+  color: var(--label-2);
+}
+
+
+.study-embed .v-key span::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  vertical-align: 1px;
+}
+
+
+.study-embed .v-key .solid::before { background: var(--sys-green); }
+.study-embed .v-key .learning::before { background: var(--sys-blue); }
+.study-embed .v-key .weak::before { background: var(--sys-orange); }
+
+
+.study-embed .v-accuracy {
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+}
+
+
+.study-embed .v-ring {
+  flex: none;
+}
+
+
+.study-embed .v-ring circle {
+  fill: none;
+  stroke-width: 5;
+}
+
+
+.study-embed .v-ring .track { stroke: var(--fill-3); }
+.study-embed .v-ring .fill { stroke: var(--sys-green); stroke-linecap: round; }
+
+
+.study-embed .v-strip {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 48px;
+  padding: 8px 4px 0;
+}
+
+
+.study-embed .v-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+
+.study-embed .v-mid {
+  font-size: 22px;
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+
+.study-embed .v-week {
+  display: flex;
+  gap: 5px;
+  margin: 2px 0;
+}
+
+
+.study-embed .v-week i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fill-3);
+}
+
+
+.study-embed .v-week i.on {
+  background: var(--sys-orange);
 }
 
 
@@ -943,6 +1112,110 @@
   color: var(--dim-2);
   font-size: 13px;
   padding: 4px 0 8px;
+}
+
+
+/* What Mochi knows about you: grouped rows split by dark grooves, Apple-style text actions. */
+.study-embed .memory-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+
+.study-embed .memory-group h3 {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(235, 235, 245, 0.6);
+  margin-bottom: 2px;
+}
+
+
+.study-embed .memory-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+
+.study-embed .memory-row + .memory-row {
+  border-top: 1px solid var(--groove);
+}
+
+
+.study-embed .memory-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+
+.study-embed .memory-text {
+  border: 0;
+  background: none;
+  padding: 0;
+  text-align: left;
+  font: 400 14px/1.4 var(--font);
+  color: var(--ink);
+  cursor: text;
+}
+
+
+.study-embed .memory-field {
+  width: 100%;
+  border: 0;
+  outline: none;
+  border-radius: var(--r-inner);
+  padding: 4px 8px;
+  margin: -4px -8px;
+  background: var(--card-2);
+  font: 400 14px/1.4 var(--font);
+  color: var(--ink);
+}
+
+
+.study-embed .memory-said,
+.study-embed .memory-date {
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.6);
+}
+
+
+.study-embed .memory-date {
+  font-weight: 600;
+}
+
+
+.study-embed .memory-recap {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+
+.study-embed .memory-forget {
+  flex: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: transparent;
+  font: 500 12px var(--font);
+  color: rgba(235, 235, 245, 0.3);
+  cursor: pointer;
+}
+
+
+.study-embed .memory-forget:hover {
+  color: #ff453a;
+  background: rgba(255, 69, 58, 0.14);
+}
+
+
+.study-embed .memory-forget:disabled {
+  opacity: 0.4;
 }
 
 
@@ -1078,7 +1351,7 @@
   padding: 8px 14px;
   border-radius: 999px;
   background: var(--ink);
-  color: #0b0c0e;
+  color: #000000;
   font-weight: 600;
   font-size: 12.5px;
 }
@@ -1166,7 +1439,7 @@
   flex-direction: column;
   padding: 6px 10px;
   border-radius: 8px;
-  background: #24262b;
+  background: #2c2c2e;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
   font-size: 12px;
 }
@@ -1190,8 +1463,12 @@
 
 @media (max-width: 960px) {
 
-  .study-embed .tiles {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .study-embed .vitals {
+    grid-template-columns: 1fr;
+  }
+
+  .study-embed .v-hero {
+    grid-row: auto;
   }
 
   .study-embed .panels {
@@ -1207,7 +1484,7 @@
 
 
 .study-embed ::-webkit-scrollbar-thumb {
-  background: #23252a;
+  background: #2c2c2e;
   border-radius: 5px;
   border: 3px solid transparent;
   background-clip: padding-box;
@@ -1230,7 +1507,7 @@
   padding: 0 4px;
   border-radius: 8px;
   background: var(--accent);
-  color: #1a0d10;
+  color: #ffffff;
   font: 600 10px/16px var(--font);
   font-style: normal;
   text-align: center;
@@ -1252,7 +1529,7 @@
 
 
 .study-embed .mic-btn:hover {
-  background: #262930;
+  background: #3a3a3c;
 }
 
 
@@ -1365,7 +1642,7 @@
 
 .study-embed .sh-miss {
   color: var(--red);
-  text-decoration: underline wavy rgba(244, 80, 94, 0.7);
+  text-decoration: underline wavy rgba(255,69,58, 0.7);
 }
 
 
@@ -1462,7 +1739,7 @@
 
 
 .study-embed .review-listen:hover {
-  background: #262930;
+  background: #3a3a3c;
 }
 
 
@@ -1542,7 +1819,7 @@
 
 .study-embed .reveal-btn {
   background: var(--accent);
-  color: #1a0d10;
+  color: #ffffff;
   padding: 11px 26px;
 }
 
@@ -1557,7 +1834,7 @@
 
 
 .study-embed .reveal-btn kbd {
-  color: #5b2a35;
+  color: rgba(255, 69, 58, 0.6);
   background: rgba(0, 0, 0, 0.12);
 }
 
@@ -1580,19 +1857,6 @@
   color: var(--dim);
 }
 
-
-.study-embed .tiles {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-
-@media (max-width: 960px) {
-
-  .study-embed .tiles {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-}
 
 
 .study-embed .nav-close {

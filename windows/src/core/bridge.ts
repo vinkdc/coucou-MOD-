@@ -2,7 +2,7 @@
 // page is opened in a plain browser, so the pages can be iterated on with
 // `npm run dev` alone.
 
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { Settings } from "./state";
 
@@ -39,6 +39,32 @@ export interface BootInfo {
 
 export interface ChatReply {
   text: string;
+  /** What Mochi saved to memory during this turn. */
+  remembered?: MemoryNote[];
+}
+
+export interface MemoryNote {
+  id: number;
+  text: string;
+}
+
+/** memory::Item: something Mochi remembers about the learner. */
+export interface MemoryItem {
+  id: number;
+  kind: "about" | "preference" | "event";
+  text: string;
+  /** The learner's own Japanese line it came from, if any. */
+  said: string;
+  /** Events only, YYYY-MM-DD. */
+  date: string;
+  created: string;
+  updated: string;
+}
+
+export interface Memory {
+  items: MemoryItem[];
+  /** One recap per finished conversation, oldest first. */
+  sessions: { id: number; date: string; summary: string }[];
 }
 
 export interface LevelPoint {
@@ -118,7 +144,10 @@ export type Grade = "again" | "hard" | "good" | "easy";
 /** What a hotkey press tells the island page. */
 export type HotkeyEvent =
   | { action: "summon" }
-  | { action: "lookup"; text?: string; error?: string };
+  | { action: "lookup"; text?: string; error?: string }
+  /** From the selection popup: text selected in another app. */
+  | { action: "ask"; text: string }
+  | { action: "listen"; text: string };
 
 export interface Voice {
   id: string;
@@ -168,6 +197,9 @@ export const Bridge = {
 
   quit: () => call<void>("quit_app"),
 
+  /** A selection-popup button: "japanese", "explain", "ask" or "listen" (Rust holds the text). */
+  selectionAction: (action: "japanese" | "explain" | "ask" | "listen") => call<void>("selection_action", { action }),
+
   openSettingsWindow: () => call<void>("open_settings_window"),
 
   /** The study window, optionally on a view ("chat", "stats") or "ask:<text>". */
@@ -185,6 +217,14 @@ export const Bridge = {
   chatReset: (which: ChatKind) => call<void>("chat_reset", { which }),
 
   learnerStats: (today: string) => call<Stats>("learner_stats", { today }),
+
+  // ── Memory ────────────────────────────────────────────────────────────────
+
+  memoryList: () => call<Memory>("memory_list"),
+  memoryForget: (id: number) => call<boolean>("memory_forget", { id }),
+  memoryEdit: (id: number, text: string, today: string) => callOrThrow<void>("memory_edit", { id, text, today }),
+  /** Deletes a conversation recap. */
+  memoryForgetSession: (id: number) => call<boolean>("memory_forget_session", { id }),
 
   // ── Reviews ───────────────────────────────────────────────────────────────
 
@@ -218,6 +258,13 @@ export const Bridge = {
   /** MP3 bytes for a Japanese line. `voice` overrides the chosen one (previews). */
   ttsSpeak: (text: string, voice: string | null = null) =>
     callOrThrow<ArrayBuffer>("tts_speak", { text, voice }),
+
+  /**
+   * The same line, streamed: MP3 pieces arrive on `onChunk` while Fish Audio is
+   * still generating; an empty piece marks the end. Rejects with a message to show.
+   */
+  ttsStream: (text: string, voice: string | null, onChunk: (bytes: ArrayBuffer) => void) =>
+    callOrThrow<void>("tts_stream", { text, voice, onChunk: new Channel<ArrayBuffer>(onChunk) }),
 
   fishVoices: (mine: boolean) => callOrThrow<Voice[]>("fish_voices", { mine }),
 

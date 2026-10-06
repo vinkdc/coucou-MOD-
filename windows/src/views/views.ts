@@ -245,7 +245,7 @@ function buildSettings(actions: ViewActions): ViewHost {
       "div",
       { class: "settings-row", style: "gap:14px" },
       h("div", { class: "grow" }),
-      h("button", { class: "link-btn", style: "color:#8e939c;font-size:11.5px", text: "Settings…", onclick: () => actions.openSettingsWindow() }),
+      h("button", { class: "link-btn", style: "color:#8e8e93;font-size:11.5px", text: "Settings…", onclick: () => actions.openSettingsWindow() }),
     ),
   );
 
@@ -315,15 +315,14 @@ function buildReview(actions: ViewActions): ViewHost {
 // ── Progress tab: stats at a glance ──────────────────────────────────────────
 
 function buildStats(actions: ViewActions): ViewHost {
-  const tile = (label: string) => {
-    const value = h("div", { class: "stat-value" });
-    return { value, el: h("div", { class: "stat-tile" }, value, h("div", { class: "stat-label", text: label })) };
-  };
-  const level = tile("Level");
-  const due = tile("Due");
-  const streak = tile("Streak");
-  const words = tile("Words");
-  const today = tile("Today");
+  // Level leads, big; the rest is quiet text with no boxes, and today's goal is the bar.
+  const value = () => h("div", { class: "hs-value" });
+  const level = h("div", { class: "hs-big" });
+  const levelName = h("div", { class: "hs-sub" });
+  const due = value();
+  const streak = value();
+  const words = value();
+  const item = (v: HTMLElement, label: string) => h("div", { class: "hs-item" }, v, h("div", { class: "hs-label", text: label }));
   const status = h("div", { class: "sub", style: "flex:1" });
   const meter = h("i", { class: "goal-fill" });
   const allBtn = btn("See all stats", "secondary", () => {
@@ -333,7 +332,12 @@ function buildStats(actions: ViewActions): ViewHost {
   const body = h(
     "div",
     { class: "stack", style: "padding:6px 16px 6px 84px" },
-    h("div", { class: "stat-row", title: "See all stats", onclick: () => actions.openStudy("stats") }, level.el, due.el, streak.el, words.el, today.el),
+    h(
+      "div",
+      { class: "home-stats", title: "See all stats", onclick: () => actions.openStudy("stats") },
+      h("div", { class: "hs-hero" }, level, h("div", { class: "hs-hero-text" }, h("div", { class: "hs-label", text: "Level" }), levelName)),
+      h("div", { class: "hs-quiet" }, item(due, "Due today"), item(streak, "Day streak"), item(words, "Words")),
+    ),
     h("div", { class: "goal stat-goal" }, h("div", { class: "goal-track" }, meter)),
     h("div", { class: "home-row" }, status, h("div", { class: "actions" }, allBtn)),
   );
@@ -344,15 +348,16 @@ function buildStats(actions: ViewActions): ViewHost {
       const goalMin = Math.max(1, State.settings.dailyGoalMinutes);
       const mins = st?.todayMinutes ?? 0;
       const n = st?.dueToday ?? 0;
-      level.value.textContent = String(Math.round(st?.level.score ?? 0));
-      due.value.textContent = String(n);
-      streak.value.textContent = String(st?.streak ?? 0);
-      words.value.textContent = String(st?.words ?? 0);
-      today.value.textContent = `${Math.round(mins)}m`;
+      level.textContent = String(Math.round(st?.level.score ?? 0));
+      levelName.textContent = st?.level.label ?? "Absolute beginner";
+      due.textContent = String(n);
+      due.classList.toggle("alert", n > 0);
+      streak.textContent = String(st?.streak ?? 0);
+      words.textContent = String(st?.words ?? 0);
       const done = mins >= goalMin;
-      status.textContent = `${st?.level.label ?? "Absolute beginner"} · ${done ? `goal of ${goalMin} min reached` : `${Math.round(mins)} of ${goalMin} min goal`}`;
+      status.textContent = done ? `Daily goal reached · ${Math.round(mins)} min` : `${Math.round(mins)} of ${goalMin} min today`;
       meter.style.width = `${Math.min(100, (mins / goalMin) * 100)}%`;
-      meter.classList.toggle("done", mins >= goalMin);
+      meter.classList.toggle("done", done);
     },
   };
 }

@@ -10,6 +10,7 @@
 // line or meeting a phrase again costs no credits.
 
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use serde::Serialize;
@@ -26,12 +27,31 @@ pub const KEY_NAME: &str = "fish-audio-api-key";
 /// works on the free developer tier.
 pub const MODELS: &[&str] = &["s2.1-pro-free", "s2.1-pro", "s2-pro", "s1"];
 
+/// One client for the whole run: its pooled connection skips the TCP and TLS
+/// handshake (a few hundred ms) on every line after the first.
 fn client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    if let Some(c) = CLIENT.get() {
+        return Ok(c.clone());
+    }
+    let built = reqwest::Client::builder()
         .timeout(Duration::from_secs(45))
         .connect_timeout(Duration::from_secs(10))
+        .pool_idle_timeout(Duration::from_secs(90))
         .build()
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(CLIENT.get_or_init(|| built).clone())
+}
+
+/// Opens the connection to Fish Audio ahead of the first line of a reply, while
+/// the model is still writing it. Only when a key is set (the user chose Fish Audio).
+pub async fn warm() {
+    if key().is_err() {
+        return;
+    }
+    if let Ok(c) = client() {
+        let _ = c.head(BASE).timeout(Duration::from_secs(5)).send().await;
+    }
 }
 
 fn key() -> Result<String, String> {
@@ -91,8 +111,16 @@ pub fn tts_body(text: &str, voice: &str, speed: f64) -> Value {
     body
 }
 
-/// MP3 bytes for `text`, from the cache when possible.
-pub async fn tts(text: &str, voice: &str, model: &str, speed: f64) -> Result<Vec<u8>, String> {
+/// One line ready to synthesise: the spoken text, the settings in effect and
+/// where its clip is cached.
+struct Line {
+    text: String,
+    model: &'static str,
+    speed: f64,
+    file: PathBuf,
+}
+
+fn line(text: &str, voice: &str, model: &str, speed: f64) -> Result<Line, String> {
     let text = speakable(text);
     if text.is_empty() {
         return Err("Nothing to say.".into());
@@ -100,21 +128,22 @@ pub async fn tts(text: &str, voice: &str, model: &str, speed: f64) -> Result<Vec
     if text.chars().count() > MAX_TEXT {
         return Err("That line is too long to read aloud.".into());
     }
-    let model = if MODELS.contains(&model) { model } else { MODELS[0] };
+    let model = MODELS.iter().copied().find(|m| *m == model).unwrap_or(MODELS[0]);
     let speed = clamp_speed(speed);
     let file = cache_dir().join(format!("{}.mp3", cache_key(&text, voice, model, speed)));
-    if let Ok(bytes) = std::fs::read(&file) {
-        if !bytes.is_empty() {
-            return Ok(bytes);
-        }
-    }
+    Ok(Line { text, model, speed, file })
+}
 
-    let key = key()?;
+fn cached(line: &Line) -> Option<Vec<u8>> {
+    std::fs::read(&line.file).ok().filter(|b| !b.is_empty())
+}
+
+async fn request(line: &Line, voice: &str) -> Result<reqwest::Response, String> {
     let response = client()?
         .post(format!("{BASE}/v1/tts"))
-        .bearer_auth(key)
-        .header("model", model)
-        .json(&tts_body(&text, voice, speed))
+        .bearer_auth(key()?)
+        .header("model", line.model)
+        .json(&tts_body(&line.text, voice, line.speed))
         .send()
         .await
         .map_err(|e| format!("Fish Audio is unreachable: {e}"))?;
@@ -123,15 +152,53 @@ pub async fn tts(text: &str, voice: &str, model: &str, speed: f64) -> Result<Vec
         let detail = response.text().await.unwrap_or_default();
         return Err(explain(status.as_u16(), &detail));
     }
-    let bytes = response.bytes().await.map_err(|e| e.to_string())?.to_vec();
+    Ok(response)
+}
+
+/// Logs and caches a finished clip.
+fn keep(line: &Line, bytes: &[u8]) -> Result<(), String> {
     if bytes.is_empty() {
         return Err("Fish Audio sent back no audio.".into());
     }
-    crate::log::line(format!("tts: {} chars, {} bytes", text.chars().count(), bytes.len()));
-    if std::fs::create_dir_all(cache_dir()).is_ok() && std::fs::write(&file, &bytes).is_ok() {
+    crate::log::line(format!("tts: {} chars, {} bytes", line.text.chars().count(), bytes.len()));
+    if std::fs::create_dir_all(cache_dir()).is_ok() && std::fs::write(&line.file, bytes).is_ok() {
         trim_cache();
     }
+    Ok(())
+}
+
+/// MP3 bytes for `text`, from the cache when possible.
+pub async fn tts(text: &str, voice: &str, model: &str, speed: f64) -> Result<Vec<u8>, String> {
+    let line = line(text, voice, model, speed)?;
+    if let Some(bytes) = cached(&line) {
+        return Ok(bytes);
+    }
+    let bytes = request(&line, voice).await?.bytes().await.map_err(|e| e.to_string())?.to_vec();
+    keep(&line, &bytes)?;
     Ok(bytes)
+}
+
+/// Same as `tts`, but hands the MP3 over in pieces as Fish Audio sends them, so
+/// playback can start while the rest is still being generated. A cached clip
+/// comes as one piece.
+pub async fn tts_stream(
+    text: &str,
+    voice: &str,
+    model: &str,
+    speed: f64,
+    mut on_chunk: impl FnMut(Vec<u8>) -> Result<(), String>,
+) -> Result<(), String> {
+    let line = line(text, voice, model, speed)?;
+    if let Some(bytes) = cached(&line) {
+        return on_chunk(bytes);
+    }
+    let mut response = request(&line, voice).await?;
+    let mut all = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|e| format!("Fish Audio stopped mid-line: {e}"))? {
+        all.extend_from_slice(&chunk);
+        on_chunk(chunk.to_vec())?;
+    }
+    keep(&line, &all)
 }
 
 fn explain(status: u16, detail: &str) -> String {

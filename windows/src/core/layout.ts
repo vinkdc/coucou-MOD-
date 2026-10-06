@@ -145,19 +145,19 @@ export function botPosition(mode: IslandMode, view: IslandViewName, islandH: num
 export function botGlowColor(s: BotStateName): string {
   switch (s) {
     case "working":
-      return "#3B9EFF";
+      return "#0a84ff";
     case "thinking":
-      return "#A78BFA";
+      return "#bf5af2";
     case "searching":
-      return "#6366F1";
+      return "#5e5ce6";
     case "approval":
-      return "#F5A524";
+      return "#ff9f0a";
     case "error":
-      return "#F4505E";
+      return "#ff453a";
     case "finished":
-      return "#34D399";
+      return "#30d158";
     case "ratelimit":
-      return "#F59E0B";
+      return "#ff9f0a";
     default:
       return "#FFFFFF";
   }
@@ -181,17 +181,17 @@ export type Wash = "red" | "green" | "pink" | "amber" | "cyan" | "indigo" | "sof
 export function washRGBA(wash: Wash): string {
   switch (wash) {
     case "red":
-      return "rgba(244,80,94,0.55)";
+      return "rgba(255,69,58,0.55)";
     case "green":
-      return "rgba(52,211,153,0.5)";
+      return "rgba(48,209,88,0.5)";
     case "pink":
-      return "rgba(244,114,182,0.55)";
+      return "rgba(10,132,255,0.55)";
     case "amber":
-      return "rgba(245,165,36,0.42)";
+      return "rgba(255,159,10,0.42)";
     case "cyan":
-      return "rgba(34,211,238,0.38)";
+      return "rgba(100,210,255,0.38)";
     case "indigo":
-      return "rgba(99,102,241,0.5)";
+      return "rgba(94,92,230,0.5)";
     case "soft":
       return "rgba(255,255,255,0.08)";
     default:

@@ -401,12 +401,12 @@ const SKIN_COLOURS: [string, string][] = [
   ["#d9a07a", "Tan"],
   ["#a9714e", "Brown"],
   ["#6f4630", "Deep"],
-  ["#f4b6c8", "Pink"],
+  ["#0a84ff", "Pink"],
   ["#b6e3cf", "Mint"],
   ["#c9b8f0", "Lavender"],
   ["#afd3f5", "Sky"],
 ];
-const MOCHI_GREY = "#c4c5ca";
+const MOCHI_GREY = "#d1d1d6";
 
 /** The body colour this skin gives Mochi; the live preview follows as you pick. */
 function renderColours() {

@@ -31,7 +31,7 @@ function toggle(on: boolean, onChange: (v: boolean) => void): HTMLElement {
 }
 
 function statusDot(ok: boolean): HTMLElement {
-  return h("i", { class: "dot", style: `background:${ok ? "#22c55e" : "#f4505e"}` });
+  return h("i", { class: "dot", style: `background:${ok ? "#30d158" : "#ff453a"}` });
 }
 
 // ── AI section ────────────────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ function providerPanel(def: ProviderDef, hasKey: boolean): HTMLElement {
 
   async function refresh() {
     const present = (await Bridge.secretPresent(def.keyName)) ?? false;
-    dot.style.background = present ? "#22c55e" : "#f4505e";
+    dot.style.background = present ? "#30d158" : "#ff453a";
     state.textContent = keyText(present);
     field.placeholder = present ? "••••••••••••  (stored)" : def.placeholder;
     clearBtn.style.display = present ? "" : "none";
@@ -404,7 +404,7 @@ function voiceSection(hasKey: boolean): HTMLElement {
 
   async function refresh() {
     const present = (await Bridge.secretPresent(KEY)) ?? false;
-    dot.style.background = present ? "#22c55e" : "#f4505e";
+    dot.style.background = present ? "#30d158" : "#ff453a";
     state.textContent = keyText(present);
     field.placeholder = present ? "••••••••••••  (stored)" : "Paste your Fish Audio API key";
     clearBtn.style.display = present ? "" : "none";
@@ -634,6 +634,19 @@ function generalSection(): HTMLElement {
     void save();
   });
 
+  const popupIgnore = h("input", {
+    type: "text",
+    value: settings.selectionIgnore ?? "",
+    placeholder: "e.g. code.exe, slack.exe",
+    spellcheck: "false",
+    style: "width:200px",
+  }) as HTMLInputElement;
+  popupIgnore.addEventListener("change", () => {
+    settings.selectionIgnore = popupIgnore.value.trim();
+    popupIgnore.value = settings.selectionIgnore;
+    void save();
+  });
+
   const position = h("select", {}) as HTMLSelectElement;
   position.append(
     h("option", { value: "top", text: "top edge" }),
@@ -689,6 +702,16 @@ function generalSection(): HTMLElement {
     h("div", { class: "row" },
       h("label", { text: "Launch at startup" }),
       toggle(settings.autostart, (v) => { settings.autostart = v; void save(); }),
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Ask Mochi popup" }),
+      toggle(settings.selectionPopup, (v) => { settings.selectionPopup = v; void save(); }),
+      h("span", { class: "hint", text: "when you select text in any app: Explain, Ask or Listen (Windows). Read through accessibility, never the clipboard; never in terminals, password managers or password fields" }),
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "No popup in" }),
+      popupIgnore,
+      h("span", { class: "hint", text: "more apps to skip, by program name" }),
     ),
     h("div", { class: "row" },
       h("label", { text: "Let Mochi use this PC" }),

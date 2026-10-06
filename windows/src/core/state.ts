@@ -2,12 +2,14 @@
 // and the preferences every window reads.
 
 import type { BotStateName, IslandMode, IslandViewName } from "./layout";
-import type { Stats } from "./bridge";
+import type { MemoryNote, Stats } from "./bridge";
 
 export interface ChatMessage {
   id: number;
   role: "user" | "assistant";
   content: string;
+  /** What Mochi saved to memory with this reply (undo-able). */
+  remembered?: MemoryNote[];
 }
 
 export interface Settings {
@@ -25,6 +27,10 @@ export interface Settings {
   hotkeyAccelerator: string;
   /** Look up the selected text, from any app. */
   hotkeyLookup: string;
+  /** A popup to ask Mochi about text selected in any app (Windows). */
+  selectionPopup: boolean;
+  /** Apps that never get it, by exe name; terminals and password managers are built in. */
+  selectionIgnore: string;
   /** Which AI teaches. */
   provider: "claude" | "gemini" | "deepseek";
   /** Gemini model id; empty = the first "flash" model the key can use. */
@@ -80,6 +86,8 @@ export const DEFAULT_SETTINGS: Settings = {
   hotkeyEnabled: true,
   hotkeyAccelerator: "Ctrl+Alt+C",
   hotkeyLookup: "Ctrl+Alt+J",
+  selectionPopup: true,
+  selectionIgnore: "",
   provider: "claude",
   geminiModel: "",
   deepseekModel: "",

@@ -7,9 +7,11 @@ import { matches } from "../core/keys";
 import { ICONS } from "./icons";
 import { Bridge, onEvent } from "../core/bridge";
 import { Sound } from "../core/sound";
-import { speakAll, stop } from "../core/voice";
+import { speakStream, stop, type SpeechStream } from "../core/voice";
 import { State, today, type ChatMessage } from "../core/state";
+import type { MemoryNote } from "../core/bridge";
 import { renderReply } from "../study/reply";
+import { spokenLines } from "../study/markup";
 import { SCENARIOS } from "../study/scenarios";
 import type { ViewHost } from "./views";
 
@@ -20,6 +22,13 @@ let sendFromOutside: ((query: string) => void) | null = null;
 /** Sends a message as if it had been typed (Home's quick chips). */
 export function askInChat(query: string) {
   sendFromOutside?.(query);
+}
+
+let fillFromOutside: ((text: string) => void) | null = null;
+
+/** Puts text in the chat field, ready to be added to, and focuses it (the selection popup's "Ask…"). */
+export function prefillChat(text: string) {
+  fillFromOutside?.(text);
 }
 
 function replyOpts(id: number) {
@@ -43,6 +52,23 @@ function bubble(message: ChatMessage): HTMLElement {
   return h("div", { class: "chat-row" }, b);
 }
 
+/** A quiet capsule under Mochi's reply: what it just remembered about the learner, with an undo. */
+function memoryRow(message: ChatMessage, note: MemoryNote): HTMLElement {
+  const row = h("div", { class: "chat-row memory-note" });
+  const undo = h("button", { class: "chat-action-undo", text: "Undo" }) as HTMLButtonElement;
+  undo.addEventListener("click", async () => {
+    undo.disabled = true;
+    if (await Bridge.memoryForget(note.id)) {
+      message.remembered = message.remembered?.filter((n) => n !== note);
+      row.remove();
+    } else {
+      undo.disabled = false;
+    }
+  });
+  row.append(h("div", { class: "chat-action memory", title: note.text }, h("span", { text: `Remembered: ${note.text}` }), undo));
+  return row;
+}
+
 /** Lays out the conversation with Messages' rhythm: tight runs, a gap when the speaker changes. */
 function renderLog(log: HTMLElement, history: ChatMessage[], thinking: boolean) {
   clear(log);
@@ -54,6 +80,7 @@ function renderLog(log: HTMLElement, history: ChatMessage[], thinking: boolean) 
     const b = row.querySelector(".bubble");
     if (b && next?.role !== m.role && !(thinking && i === history.length - 1 && m.role === "assistant")) b.classList.add("tail");
     log.append(row);
+    for (const note of m.remembered ?? []) log.append(memoryRow(m, note));
   });
   // A fresh conversation offers talks to start, in this same chat.
   if (history.length === 0 && !thinking) {
@@ -117,6 +144,19 @@ export function buildPrompt(onHeightChange: () => void, onActivity: () => void):
   let renderedCount = "";
   let streamed: ChatMessage | null = null;
   let streamRound = -1;
+  /** The field holds a quote from the selection popup ("Ask…"), not an old draft. */
+  let quoted = false;
+  /** Auto-play of the reply being received, and how many of its lines it has queued. */
+  let speech: SpeechStream | null = null;
+  let spoken = 0;
+
+  /** Queues the reply's Japanese lines in `text` that aren't queued yet. */
+  const speakNew = (msg: ChatMessage, text: string) => {
+    if (!speech) return;
+    const lines = spokenLines(text, replyOpts(msg.id).keyPrefix);
+    for (const line of lines.slice(spoken)) speech.push(line);
+    spoken = Math.max(spoken, lines.length);
+  };
 
   void onEvent<{ chat: string; round: number; delta: string }>("assistant-stream", ({ chat, round, delta }) => {
     if (chat !== "quick" || !sending || !delta) return;
@@ -128,6 +168,8 @@ export function buildPrompt(onHeightChange: () => void, onActivity: () => void):
     }
     streamRound = round;
     streamed.content += delta;
+    // Speak each Japanese line as soon as it is complete, while the rest still streams in.
+    speakNew(streamed, streamed.content.slice(0, streamed.content.lastIndexOf("\n") + 1));
     const node = log.querySelector<HTMLElement>(`[data-id="${streamed.id}"]`);
     if (node) {
       clear(node);
@@ -143,10 +185,13 @@ export function buildPrompt(onHeightChange: () => void, onActivity: () => void):
     const query = input.value.trim();
     if (!query || sending) return;
     input.value = "";
+    quoted = false;
     sending = true;
     streamed = null;
     streamRound = -1;
     stop();
+    speech = State.settings.autoPlay ? speakStream() : null;
+    spoken = 0;
     Sound.play("send");
     onActivity();
     const keepAlive = window.setInterval(onActivity, 2000);
@@ -158,16 +203,16 @@ export function buildPrompt(onHeightChange: () => void, onActivity: () => void):
 
     try {
       const reply = await Bridge.chatSend("quick", query, null, today());
-      const msg = streamed ?? { id: nextId++, role: "assistant" as const, content: "" };
+      const msg: ChatMessage = streamed ?? { id: nextId++, role: "assistant", content: "" };
       if (!streamed) State.chatHistory.push(msg);
       msg.content = reply.text;
+      if (reply.remembered?.length) msg.remembered = reply.remembered;
       State.stateOverride = null;
       Sound.play("finish");
-      if (State.settings.autoPlay) {
-        const { lines } = renderReply(reply.text, replyOpts(msg.id));
-        speakAll(lines).catch(() => {});
-      }
+      // The last line, which had no newline after it yet (or all of them, if nothing streamed).
+      speakNew(msg, reply.text);
     } catch (err) {
+      if (speech) stop();
       const half = streamed;
       State.chatHistory = State.chatHistory.filter((m) => m !== half);
       State.stateOverride = null;
@@ -178,6 +223,7 @@ export function buildPrompt(onHeightChange: () => void, onActivity: () => void):
       window.clearInterval(keepAlive);
       sending = false;
       streamed = null;
+      speech = null;
       renderedCount = "";
       onActivity();
       State.notify();
@@ -190,6 +236,14 @@ export function buildPrompt(onHeightChange: () => void, onActivity: () => void):
     if (sending) return;
     input.value = query;
     void submit();
+  };
+
+  fillFromOutside = (text) => {
+    input.value = text;
+    quoted = true;
+    syncSend();
+    input.focus();
+    input.setSelectionRange(text.length, text.length);
   };
 
   send.addEventListener("click", () => void submit());
@@ -234,7 +288,9 @@ export function buildPrompt(onHeightChange: () => void, onActivity: () => void):
     },
     focus() {
       input.focus();
-      input.select();
+      // A quote just put there is to be added to: the caret goes after it, nothing is selected.
+      if (quoted) input.setSelectionRange(input.value.length, input.value.length);
+      else input.select();
     },
   };
 }

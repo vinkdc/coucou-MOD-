@@ -76,6 +76,10 @@ pub struct Settings {
     // ── Assistant ─────────────────────────────────────────────────────────
     /// Let Mochi open links, search the web, control music and read basic PC facts.
     pub pc_tools: bool,
+    /// A popup (Explain / Ask… / Listen) when text is selected in any app (Windows).
+    pub selection_popup: bool,
+    /// Extra apps that never get that popup, by exe name (terminals and password managers are built in).
+    pub selection_ignore: String,
 }
 
 impl Default for Settings {
@@ -115,6 +119,8 @@ impl Default for Settings {
             tts_speed: 0.9,
             auto_play: true,
             pc_tools: true,
+            selection_popup: true,
+            selection_ignore: String::new(),
         }
     }
 }
