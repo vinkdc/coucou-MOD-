@@ -1,10 +1,10 @@
-// Skin bundles the user imported: listing, loading and the chat persona. Unlike
-// the dev-only skins in local/, these work in every build — a bundle is only
-// data (see src-tauri/src/skins.rs and docs/SKINS.md).
+// Skin bundles the user imported: listing, loading and the chat persona. A
+// bundle is only data — hair pictures and a manifest (see src-tauri/src/skins.rs
+// and docs/SKINS.md) — so it works in every build.
 
 import { Bridge, type SkinInfo } from "../core/bridge";
-import { RigSkin, parseManifest, type Manifest } from "./rig";
-import type { FullSkin } from "./skin";
+import { HairSkin } from "./hair";
+import { parseManifest, type Manifest } from "./manifest";
 
 /** Settings value for an imported skin: `bundle:<id>`, so it can't clash with a built-in name. */
 export const BUNDLE_PREFIX = "bundle:";
@@ -26,7 +26,7 @@ async function readManifest(id: string): Promise<Manifest | string> {
 }
 
 /** The skin ready to draw, or null (the character then stays Mochi). */
-export async function loadBundle(id: string): Promise<FullSkin | null> {
+export async function loadBundle(id: string): Promise<HairSkin | null> {
   try {
     const m = await readManifest(id);
     if (typeof m === "string") {
@@ -34,15 +34,13 @@ export async function loadBundle(id: string): Promise<FullSkin | null> {
       return null;
     }
     const names = new Set(m.layers.map((l) => l.src));
-    if (m.iris) names.add(m.iris.src);
-    for (const src of Object.values(m.expressions)) names.add(src);
     const images = new Map<string, ImageBitmap>();
     for (const name of names) {
       const bytes = await Bridge.skinLayer(id, name);
       if (!bytes) throw new Error(`missing ${name}`);
       images.set(name, await createImageBitmap(new Blob([bytes], { type: "image/png" })));
     }
-    const skin = new RigSkin(m, images);
+    const skin = new HairSkin(m, images);
     // Wear it only once it can draw, so the character never blinks out.
     await skin.ready;
     return skin;

@@ -210,6 +210,9 @@ export const Bridge = {
   /** Gemini models the stored key can use. */
   geminiModels: () => callOrThrow<{ id: string; label: string }[]>("gemini_models"),
 
+  /** DeepSeek models the stored key can use. */
+  deepseekModels: () => callOrThrow<{ id: string; label: string }[]>("deepseek_models"),
+
   // ── Voice ─────────────────────────────────────────────────────────────────
 
   /** MP3 bytes for a Japanese line. `voice` overrides the chosen one (previews). */

@@ -24,10 +24,12 @@ pub struct Settings {
     pub hotkey_accelerator: String,
     /// Look up the selected text, from any app.
     pub hotkey_lookup: String,
-    /// Which AI teaches: "claude" or "gemini".
+    /// Which AI teaches: "claude", "gemini" or "deepseek".
     pub provider: String,
     /// Gemini model id; empty = the first "flash" model the key can use.
     pub gemini_model: String,
+    /// DeepSeek model id; empty = the first "flash" model the key can use.
+    pub deepseek_model: String,
     /// The character's look: "mochi" (default) or an imported skin.
     pub skin: String,
     /// What the tutor calls the learner. Empty = never named.
@@ -70,6 +72,10 @@ pub struct Settings {
     pub tts_speed: f64,
     /// Read each new Japanese line aloud as it arrives.
     pub auto_play: bool,
+
+    // ── Assistant ─────────────────────────────────────────────────────────
+    /// Let Mochi open links, search the web, control music and read basic PC facts.
+    pub pc_tools: bool,
 }
 
 impl Default for Settings {
@@ -87,6 +93,7 @@ impl Default for Settings {
             hotkey_lookup: crate::hotkey::DEFAULT_LOOKUP.to_string(),
             provider: "claude".into(),
             gemini_model: String::new(),
+            deepseek_model: String::new(),
             skin: "mochi".into(),
             user_name: String::new(),
             keys: std::collections::HashMap::new(),
@@ -107,6 +114,7 @@ impl Default for Settings {
             tts_model: crate::fishaudio::MODELS[0].to_string(),
             tts_speed: 0.9,
             auto_play: true,
+            pc_tools: true,
         }
     }
 }

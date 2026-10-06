@@ -1,16 +1,14 @@
-// The editor's canvas: the figure on a checkerboard, with handles to drag. What
+// The editor's canvas: the hair on a checkerboard, with handles to drag. What
 // can be dragged depends on what is selected — a picture (move it, resize it,
-// set where it swings from), the face (head circle, chin, eyes, cheeks, face
-// area) or an expression picture (move it over the face area).
+// set where it swings from) or the fit (a Mochi outline to line the hair up
+// with: where its eyes are, how wide and tall its head).
 
-import { pool, bake, type Box, type Doc, type Mood, type Placed } from "./doc";
+import { pool, bake, type Doc, type Placed } from "./doc";
 import type { Pt } from "../mochi/puppet";
-import { paintCover } from "../mochi/rig";
 
 export type Focus =
   | { kind: "part"; index: number }
-  | { kind: "face" }
-  | { kind: "expr"; mood: Mood };
+  | { kind: "fit" };
 
 interface Handle {
   /** Picture coordinates. */
@@ -28,6 +26,17 @@ interface Handle {
 
 const HIT = 9;
 
+// Mochi's proportions, as BotEngine draws them (R = one Mochi radius): the body
+// is a squircle 1.14 R across and 0.88 R down from its centre, the eyes sit
+// 0.105 R below that centre, 0.41 R to each side, 0.25 R wide and 0.27 R tall.
+const BODY_RX = 1.14;
+const BODY_RY = 0.88;
+const BODY_EXP = 2 / 2.7;
+const EYE_DROP = 0.105;
+const EYE_SIDE = 0.41;
+const EYE_W = 0.25;
+const EYE_H = 0.27;
+
 export class Stage {
   readonly el: HTMLDivElement;
   private canvas: HTMLCanvasElement;
@@ -42,8 +51,6 @@ export class Stage {
   private dragging: { handle: Handle; start: { x: number; y: number; snapshot: unknown } } | null = null;
   private panning: { x: number; y: number; px: number; py: number } | null = null;
   private hover: Handle | null = null;
-  /** Set while the colour picker is armed: the next click samples the figure. */
-  pickColour: ((hex: string | null) => void) | null = null;
 
   constructor(
     private get: () => { doc: Doc; focus: Focus },
@@ -101,25 +108,14 @@ export class Stage {
     return { x: (e.clientX - r.left - this.panX) / this.zoom, y: (e.clientY - r.top - this.panY) / this.zoom };
   }
 
-  /** The figure as it will look, cached until something moves. */
+  /** The hair as it will look (behind Mochi first), cached until something moves. */
   figure(): HTMLCanvasElement {
-    const { doc, focus } = this.get();
-    const key = JSON.stringify([doc.w, doc.h, doc.pixel, doc.parts, focus.kind === "expr" ? [focus.mood, doc.expressions[focus.mood], doc.cover, doc.lid] : null]);
+    const { doc } = this.get();
+    const key = JSON.stringify([doc.w, doc.h, doc.parts]);
     if (this.composite && key === this.compositeKey) return this.composite;
     this.compositeKey = key;
-    const order = [...doc.parts.filter((p) => p.role === "back"), ...doc.parts.filter((p) => p.role === "head"), ...doc.parts.filter((p) => p.role === "iris"), ...doc.parts.filter((p) => p.role === "front")];
+    const order = ["back", "front", "top"].flatMap((role) => doc.parts.filter((p) => p.role === role));
     const c = bake(doc, order, this.composite ?? undefined);
-    if (focus.kind === "expr") {
-      // What the expression will look like: the face area painted over, the picture on top.
-      const x = c.getContext("2d")!;
-      const b = doc.cover;
-      paintCover(x, [b.x0, b.y0, b.x1, b.y1], doc.pixel ? "rect" : "oval", doc.lid);
-      const placed = doc.expressions[focus.mood];
-      if (placed) {
-        const face = bake(doc, [placed]);
-        x.drawImage(face, 0, 0);
-      }
-    }
     this.composite = c;
     return c;
   }
@@ -144,7 +140,7 @@ export class Stage {
       x.rect(i * cell, j * cell, Math.min(cell, pw - i * cell), Math.min(cell, ph - j * cell));
     }
     x.fill();
-    x.imageSmoothingEnabled = !doc.pixel || this.zoom < 1;
+    x.imageSmoothingEnabled = true;
     x.drawImage(this.figure(), 0, 0, pw, ph);
     x.restore();
 
@@ -173,34 +169,8 @@ export class Stage {
           x.stroke();
         }
       }
-    } else if (focus.kind === "face") {
-      const { cx, cy, r } = doc.head;
-      x.strokeStyle = "rgba(99, 179, 255, 0.9)";
-      x.beginPath();
-      x.arc(cx, cy, r, 0, Math.PI * 2);
-      x.stroke();
-      x.strokeStyle = "rgba(245, 165, 36, 0.9)";
-      x.setLineDash([6 / this.zoom, 4 / this.zoom]);
-      x.beginPath();
-      x.moveTo(cx - r * 1.2, doc.chin);
-      x.lineTo(cx + r * 1.2, doc.chin);
-      x.stroke();
-      x.setLineDash([]);
-      x.strokeStyle = "rgba(52, 211, 153, 0.95)";
-      for (const e of doc.eyes) {
-        x.beginPath();
-        x.ellipse((e.x0 + e.x1) / 2, (e.y0 + e.y1) / 2, (e.x1 - e.x0) / 2, (e.y1 - e.y0) / 2, 0, 0, Math.PI * 2);
-        x.stroke();
-      }
-      x.fillStyle = "rgba(255, 140, 155, 0.35)";
-      for (const [px, py] of doc.cheeks) {
-        x.beginPath();
-        x.ellipse(px, py, doc.head.r * 0.13, doc.head.r * 0.09, 0, 0, Math.PI * 2);
-        x.fill();
-      }
-      if (Object.keys(doc.expressions).length) this.box(x, doc.cover, "rgba(196, 139, 255, 0.9)");
     } else {
-      this.box(x, doc.cover, "rgba(196, 139, 255, 0.9)");
+      this.drawMochi(x, doc);
     }
     x.restore();
 
@@ -234,10 +204,36 @@ export class Stage {
     }
   }
 
-  private box(x: CanvasRenderingContext2D, b: Box, colour: string) {
-    x.strokeStyle = colour;
+  /** Mochi's body and eyes as the hair will meet them, in picture coordinates. */
+  private drawMochi(x: CanvasRenderingContext2D, doc: Doc) {
+    const { width: kx, height: ky, centerX, eyeLine } = doc.fit;
+    const cy = eyeLine - EYE_DROP * ky;
+    const body = new Path2D();
+    for (let i = 0; i <= 72; i++) {
+      const a = (i / 72) * Math.PI * 2;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const px = centerX + BODY_RX * kx * (ca >= 0 ? ca ** BODY_EXP : -((-ca) ** BODY_EXP));
+      const py = cy + BODY_RY * ky * (sa >= 0 ? sa ** BODY_EXP : -((-sa) ** BODY_EXP));
+      if (i === 0) body.moveTo(px, py);
+      else body.lineTo(px, py);
+    }
+    body.closePath();
+    x.fillStyle = "rgba(237, 237, 239, 0.16)";
+    x.fill(body);
+    x.strokeStyle = "rgba(99, 179, 255, 0.9)";
+    x.stroke(body);
+    x.fillStyle = "rgba(26, 20, 18, 0.7)";
+    for (const side of [-1, 1]) {
+      x.beginPath();
+      x.ellipse(centerX + side * EYE_SIDE * kx, eyeLine, (EYE_W * kx) / 2, (EYE_H * ky) / 2, 0, 0, Math.PI * 2);
+      x.fill();
+    }
+    x.strokeStyle = "rgba(245, 165, 36, 0.9)";
     x.setLineDash([6 / this.zoom, 4 / this.zoom]);
-    x.strokeRect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
+    x.beginPath();
+    x.moveTo(centerX - BODY_RX * kx * 1.1, eyeLine);
+    x.lineTo(centerX + BODY_RX * kx * 1.1, eyeLine);
+    x.stroke();
     x.setLineDash([]);
   }
 
@@ -247,25 +243,23 @@ export class Stage {
     const { doc, focus } = this.get();
     const out: Handle[] = [];
     if (!doc.parts.length) return out;
-    const placedHandles = (p: Placed, colour: string) => {
-      const img = pool.get(p.img);
-      if (!img) return;
-      const w = img.width * p.scale, h = img.height * p.scale;
-      out.push({
-        x: p.x + w, y: p.y + h, shape: "square", colour, label: "Resize", cursor: "nwse-resize",
-        grab: () => ({ x: p.x, y: p.y, scale: p.scale }),
-        drag: (nx, ny, s) => {
-          const g = s.snapshot as { x: number; y: number; scale: number };
-          const scale = Math.max((nx - g.x) / img.width, (ny - g.y) / img.height, 0.02);
-          p.scale = Math.min(scale, 8);
-        },
-      });
-    };
     if (focus.kind === "part") {
       const part = doc.parts[focus.index];
       if (!part) return out;
-      placedHandles(part, "#63b3ff");
-      if (part.motion !== "still" && part.role !== "iris") {
+      const img = pool.get(part.img);
+      if (img) {
+        const w = img.width * part.scale, h = img.height * part.scale;
+        out.push({
+          x: part.x + w, y: part.y + h, shape: "square", colour: "#63b3ff", label: "Resize", cursor: "nwse-resize",
+          grab: () => ({ x: part.x, y: part.y, scale: part.scale }),
+          drag: (nx, ny, s) => {
+            const g = s.snapshot as { x: number; y: number; scale: number };
+            const scale = Math.max((nx - g.x) / img.width, (ny - g.y) / img.height, 0.02);
+            part.scale = Math.min(scale, 8);
+          },
+        });
+      }
+      if (part.motion !== "still") {
         out.push(this.point(part.pivot, "#f5a524", part.motion === "bend" ? "Root (stays put)" : "Swings from here"));
         if (part.motion === "bend") {
           out.push({
@@ -274,30 +268,24 @@ export class Stage {
           });
         }
       }
-    } else if (focus.kind === "face") {
-      const hd = doc.head;
+    } else {
+      const f = doc.fit;
+      const cy = f.eyeLine - EYE_DROP * f.height;
       out.push({
-        x: hd.cx, y: hd.cy, shape: "ring", colour: "#63b3ff", label: "Head centre", cursor: "move",
+        x: f.centerX, y: f.eyeLine, shape: "ring", colour: "#63b3ff", label: "Move Mochi (eye line)", cursor: "move",
         drag: (x, y) => {
-          hd.cx = x;
-          hd.cy = y;
+          f.centerX = x;
+          f.eyeLine = y;
         },
       });
       out.push({
-        x: hd.cx + hd.r, y: hd.cy, shape: "dot", colour: "#63b3ff", label: "Head size", cursor: "ew-resize",
-        drag: (x, y) => (hd.r = Math.max(4, Math.hypot(x - hd.cx, y - hd.cy))),
+        x: f.centerX + BODY_RX * f.width, y: cy, shape: "dot", colour: "#63b3ff", label: "Mochi's width", cursor: "ew-resize",
+        drag: (x) => (f.width = Math.max(20, (x - f.centerX) / BODY_RX)),
       });
       out.push({
-        x: hd.cx, y: doc.chin, shape: "square", colour: "#f5a524", label: "Chin (squash and tilt from here)", cursor: "ns-resize",
-        drag: (_x, y) => (doc.chin = y),
+        x: f.centerX, y: cy + BODY_RY * f.height, shape: "square", colour: "#63b3ff", label: "Mochi's height", cursor: "ns-resize",
+        drag: (_x, y) => (f.height = Math.max(20, (y - f.eyeLine) / (BODY_RY - EYE_DROP))),
       });
-      doc.eyes.forEach((e, i) => out.push(...this.boxHandles(e, "#34d399", i ? "Right eye" : "Left eye")));
-      doc.cheeks.forEach((c, i) => out.push(this.point(c, "#ff8c9b", i ? "Right cheek" : "Left cheek")));
-      if (Object.keys(doc.expressions).length) out.push(...this.boxHandles(doc.cover, "#c48bff", "Face area"));
-    } else {
-      const placed = doc.expressions[focus.mood];
-      out.push(...this.boxHandles(doc.cover, "#c48bff", "Face area"));
-      if (placed) placedHandles(placed, "#63b3ff");
     }
     return out;
   }
@@ -305,28 +293,6 @@ export class Stage {
   private point(p: Pt, colour: string, label: string): Handle {
     const m = p as unknown as number[];
     return { x: m[0], y: m[1], shape: "dot", colour, label, cursor: "move", drag: (x, y) => { m[0] = x; m[1] = y; } };
-  }
-
-  /** Move by the centre, size by the bottom-right corner. */
-  private boxHandles(b: Box, colour: string, label: string): Handle[] {
-    return [
-      {
-        x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2, shape: "ring", colour, label, cursor: "move",
-        grab: () => ({ ...b }),
-        drag: (x, y, s) => {
-          const g = s.snapshot as Box;
-          const dx = x - s.x, dy = y - s.y;
-          b.x0 = g.x0 + dx; b.x1 = g.x1 + dx; b.y0 = g.y0 + dy; b.y1 = g.y1 + dy;
-        },
-      },
-      {
-        x: b.x1, y: b.y1, shape: "square", colour, label: `${label} size`, cursor: "nwse-resize",
-        drag: (x, y) => {
-          b.x1 = Math.max(x, b.x0 + 4);
-          b.y1 = Math.max(y, b.y0 + 4);
-        },
-      },
-    ];
   }
 
   private hit(e: PointerEvent): Handle | null {
@@ -346,26 +312,24 @@ export class Stage {
   /** The picture under the pointer, when a picture is selected: dragging it moves it. */
   private bodyDrag(e: PointerEvent): Handle | null {
     const { doc, focus } = this.get();
-    const placed = focus.kind === "part" ? doc.parts[focus.index] : focus.kind === "expr" ? doc.expressions[focus.mood] : null;
+    const part = focus.kind === "part" ? doc.parts[focus.index] : null;
+    const placed: Placed | null = part;
     const img = placed && pool.get(placed.img);
-    if (!placed || !img) return null;
+    if (!part || !placed || !img) return null;
     const p = this.toPic(e);
     const inside = p.x >= placed.x && p.y >= placed.y && p.x <= placed.x + img.width * placed.scale && p.y <= placed.y + img.height * placed.scale;
     if (!inside) return null;
-    const part = focus.kind === "part" ? doc.parts[focus.index] : null;
     return {
       x: p.x, y: p.y, shape: "dot", colour: "", cursor: "grabbing",
-      grab: () => ({ x: placed.x, y: placed.y, pivot: part ? [...part.pivot] : null, tipY: part?.tipY ?? 0 }),
+      grab: () => ({ x: placed.x, y: placed.y, pivot: [...part.pivot], tipY: part.tipY }),
       drag: (x, y, s) => {
-        const g = s.snapshot as { x: number; y: number; pivot: number[] | null; tipY: number };
+        const g = s.snapshot as { x: number; y: number; pivot: number[]; tipY: number };
         const dx = x - s.x, dy = y - s.y;
         placed.x = Math.round(g.x + dx);
         placed.y = Math.round(g.y + dy);
         // The motion points travel with the picture.
-        if (part && g.pivot) {
-          part.pivot = [g.pivot[0] + dx, g.pivot[1] + dy];
-          part.tipY = g.tipY + dy;
-        }
+        part.pivot = [g.pivot[0] + dx, g.pivot[1] + dy];
+        part.tipY = g.tipY + dy;
       },
     };
   }
@@ -374,21 +338,6 @@ export class Stage {
 
   private down(e: PointerEvent) {
     this.canvas.setPointerCapture(e.pointerId);
-    if (this.pickColour) {
-      const p = this.toPic(e);
-      const c = this.figure().getContext("2d", { willReadFrequently: true })!;
-      const x = Math.round(p.x), y = Math.round(p.y);
-      let hex: string | null = null;
-      if (x >= 0 && y >= 0 && x < this.figure().width && y < this.figure().height) {
-        const [r, g, b, a] = c.getImageData(x, y, 1, 1).data;
-        if (a > 40) hex = `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
-      }
-      const done = this.pickColour;
-      this.pickColour = null;
-      this.canvas.style.cursor = "";
-      done(hex);
-      return;
-    }
     const handle = e.button === 0 ? this.hit(e) ?? this.bodyDrag(e) : null;
     if (handle) {
       this.onBegin();
@@ -413,10 +362,6 @@ export class Stage {
       this.panX = this.panning.px + e.clientX - this.panning.x;
       this.panY = this.panning.py + e.clientY - this.panning.y;
       this.draw();
-      return;
-    }
-    if (this.pickColour) {
-      this.canvas.style.cursor = "crosshair";
       return;
     }
     const hd = this.hit(e);

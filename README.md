@@ -105,17 +105,14 @@ opens with the file attached and ready for a question.
 
 ### Characters and the skin editor
 
-The default character is Mochi. You can switch to the Ribbon variant, import a skin as a
-`.zip` or a folder, or build one yourself.
+The default character is Mochi. You can switch to the Ribbon variant, import a hair skin as a
+`.zip` or a folder, or build one yourself. A skin is only the hair and bow worn on Mochi; Mochi
+keeps its own body, eyes and every mood.
 
-<img src="docs/media/windows/skin-editor.jpg" width="664" alt="The skin editor with the pictures list, face tools, canvas and live preview">
-
-Drop a picture of your character and the editor guesses the head, eyes and cheeks. Drag the
-points into place, say which pictures swing or bend, optionally draw a face per mood, and
-watch the real character engine wear it in the preview. A skin can also carry a chat
-personality, and your own name from Settings fills in the `{{user}}` placeholder.
-
-<img src="docs/media/windows/skin-moods.jpg" width="664" alt="A pixel critter skin showing twelve moods">
+Drop the hair of your character and the editor guesses how it sits on Mochi. Drag the blue Mochi
+outline until its eyes sit where the face goes, say which pictures swing or bend, and watch the
+real character engine wear it in the live preview. A skin can also carry a chat personality, and
+your own name from Settings fills in the `{{user}}` placeholder.
 
 The format is data only, so an imported skin can never run code. See
 [docs/SKINS.md](docs/SKINS.md) for the format and a sample you can generate.

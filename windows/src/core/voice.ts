@@ -11,6 +11,43 @@ let playingKey: string | null = null;
 let generation = 0;
 const listeners = new Set<(key: string | null) => void>();
 
+// How loud the voice is, so the character can move with it. Wired once, on the
+// first clip, and only when the audio context is running: routing the element
+// through a suspended context would silence it.
+let analyser: AnalyserNode | null = null;
+let context: AudioContext | null = null;
+const samples = new Uint8Array(512);
+
+async function listen(a: HTMLAudioElement) {
+  if (analyser) return;
+  try {
+    context ??= new AudioContext();
+    if (context.state !== "running") {
+      // resume() waits for a user gesture when there was none: don't hold the clip back for it.
+      await Promise.race([context.resume(), new Promise((r) => setTimeout(r, 150))]);
+    }
+    if (context.state !== "running") return;
+    const source = context.createMediaElementSource(a);
+    const node = context.createAnalyser();
+    node.fftSize = samples.length;
+    node.smoothingTimeConstant = 0.3;
+    source.connect(node);
+    node.connect(context.destination);
+    analyser = node;
+  } catch {
+    analyser = null;
+  }
+}
+
+/** Loudness of the voice right now, 0..1; -1 when it can't be measured. */
+export function level(): number {
+  if (!analyser) return -1;
+  analyser.getByteTimeDomainData(samples);
+  let sum = 0;
+  for (const v of samples) sum += ((v - 128) / 128) ** 2;
+  return Math.min(1, Math.sqrt(sum / samples.length) * 4);
+}
+
 function setPlaying(key: string | null) {
   playingKey = key;
   for (const fn of listeners) fn(key);
@@ -50,6 +87,8 @@ async function play(text: string, key: string, voice: string | null, gen: number
   if (gen !== generation) return;
   audio ??= new Audio();
   const a = audio;
+  await listen(a);
+  if (gen !== generation) return;
   a.src = url;
   await new Promise<void>((resolve, reject) => {
     const done = () => {

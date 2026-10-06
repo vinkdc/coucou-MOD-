@@ -26,9 +26,11 @@ export interface Settings {
   /** Look up the selected text, from any app. */
   hotkeyLookup: string;
   /** Which AI teaches. */
-  provider: "claude" | "gemini";
+  provider: "claude" | "gemini" | "deepseek";
   /** Gemini model id; empty = the first "flash" model the key can use. */
   geminiModel: string;
+  /** DeepSeek model id; empty = the first "flash" model the key can use. */
+  deepseekModel: string;
   /** "mochi", "ribbon", or an imported skin. */
   skin: string;
   /** What the tutor calls the learner; empty = never named. */
@@ -62,6 +64,9 @@ export interface Settings {
   ttsModel: string;
   ttsSpeed: number;
   autoPlay: boolean;
+
+  /** Let Mochi open links, search the web, control music and read basic PC facts. */
+  pcTools: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -77,6 +82,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hotkeyLookup: "Ctrl+Alt+J",
   provider: "claude",
   geminiModel: "",
+  deepseekModel: "",
   skin: "mochi",
   userName: "",
   keys: {},
@@ -97,6 +103,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ttsModel: "s2.1-pro-free",
   ttsSpeed: 0.9,
   autoPlay: true,
+  pcTools: true,
 };
 
 type Listener = () => void;
@@ -134,7 +141,7 @@ class AppState {
   /** The lookup on screen: what was selected, and why there may be no answer. */
   lookup: { text: string; error?: string; token: number } | null = null;
   /** The review session the island is showing. */
-  review: { limit: number; revealed: boolean; fromReminder: boolean; token: number } | null = null;
+  review: { limit: number; revealed: boolean; fromReminder: boolean; token: number; done?: boolean } | null = null;
 
   lastActivity = performance.now();
 

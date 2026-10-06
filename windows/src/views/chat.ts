@@ -193,10 +193,24 @@ export function buildPrompt(onHeightChange: () => void, onActivity: () => void):
   };
 
   send.addEventListener("click", () => void submit());
+  // While an IME is composing, Enter / arrows / Esc belong to it (convert, pick a
+  // clause, cancel): never send or switch tabs on them. The commit Enter can
+  // arrive just after compositionend, so it is covered for a moment too.
+  let composing = false;
+  let composedAt = -Infinity;
+  input.addEventListener("compositionstart", () => (composing = true));
+  input.addEventListener("compositionend", () => {
+    composing = false;
+    composedAt = performance.now();
+  });
   input.addEventListener("keydown", (e) => {
     const ev = e as KeyboardEvent;
     const keys = State.settings.keys;
-    if (matches(ev, keys, "chat.send") && !ev.isComposing) {
+    if (composing || ev.isComposing || ev.keyCode === 229 || performance.now() - composedAt < 40) {
+      e.stopPropagation();
+      return;
+    }
+    if (matches(ev, keys, "chat.send")) {
       e.preventDefault();
       void submit();
     }

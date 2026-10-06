@@ -1,5 +1,5 @@
 // The generic machinery of a cut-out puppet: springs, mip-mapped layers and the
-// grid warp that bends a ponytail. Used by RigSkin (rig.ts), which draws any
+// grid warp that bends a ponytail. Used by HairSkin (hair.ts), which draws any
 // imported skin bundle.
 
 export type Pt = readonly [number, number];
@@ -120,9 +120,13 @@ export function drawBent(x: CanvasRenderingContext2D, layer: Layer, scale: numbe
     // Grown a hair outwards so neighbouring triangles leave no seams.
     const cx = (A[0] + B[0] + C[0]) / 3;
     const cy = (A[1] + B[1] + C[1]) / 3;
+    // By a pixel and a half of the canvas at least: at small sizes 2.5 picture
+    // px is under a pixel, the antialiased clip edges of neighbours no longer
+    // overlap, and a light line shows through the seam.
+    const by = Math.max(2.5, 1.5 / scale);
     const grow = (q: Pt): Pt => {
       const d = Math.hypot(q[0] - cx, q[1] - cy) || 1;
-      return [q[0] + ((q[0] - cx) / d) * 2.5, q[1] + ((q[1] - cy) / d) * 2.5];
+      return [q[0] + ((q[0] - cx) / d) * by, q[1] + ((q[1] - cy) / d) * by];
     };
     const [ga, gb, gc] = [grow(A), grow(B), grow(C)];
     x.beginPath();

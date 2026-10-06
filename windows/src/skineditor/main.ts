@@ -1,8 +1,8 @@
-// Skin editor window — make a character skin from your own pictures without
-// writing anything by hand. Drop a picture, drag the face points into place,
-// say which parts swing, optionally draw a face per mood, watch it live, save.
-// What it saves is an ordinary skin bundle (docs/SKINS.md), checked by Rust
-// exactly like an imported one.
+// Skin editor window — make a hair skin from your own pictures without writing
+// anything by hand. Drop the hair (and a bow), line it up with Mochi, say which
+// parts swing or bend, watch it live on Mochi, save. What it saves is an
+// ordinary skin bundle (docs/SKINS.md), checked by Rust exactly like an
+// imported one.
 
 import "@fontsource-variable/inter/opsz.css";
 import "./editor.css";
@@ -11,10 +11,11 @@ import { Sound } from "../core/sound";
 import { binding, comboFromEvent } from "../core/keys";
 import { h, clear } from "../views/dom";
 import { BUNDLE_PREFIX, listBundles } from "../mochi/bundles";
+import { parseManifest } from "../mochi/manifest";
 import {
-  MOODS, addToPool, bake, build, emptyDoc, opaqueBox, fromManifest, guessFromFirst, placeMotion, pool, problems,
-  hasPlainBackground, removeBackground, skinId, skinNearEyes, slug, MAX_SIDE,
-  type Doc, type Feel, type Mood, type Motion, type Part, type PartRole, type Placed,
+  addToPool, build, emptyDoc, exampleDoc, fromManifest, guessFit, placeMotion, pool, problems,
+  hasPlainBackground, removeBackground, skinId, slug, MAX_SIDE,
+  type Doc, type Feel, type Motion, type Part, type PartRole, type Placed,
 } from "./doc";
 import { Stage, type Focus } from "./stage";
 import { Preview, PREVIEW_MOODS } from "./preview";
@@ -24,7 +25,7 @@ Sound.setEnabled(false);
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let doc: Doc = emptyDoc();
-let focus: Focus = { kind: "face" };
+let focus: Focus = { kind: "fit" };
 let past: Doc[] = [];
 let future: Doc[] = [];
 /** True once something changed since the last save or load. */
@@ -59,8 +60,7 @@ function redo() {
 }
 
 function fixFocus() {
-  if (focus.kind === "part" && !doc.parts[focus.index]) focus = doc.parts.length ? { kind: "part", index: 0 } : { kind: "face" };
-  if (focus.kind === "expr" && !doc.expressions[focus.mood]) focus = { kind: "face" };
+  if (focus.kind === "part" && !doc.parts[focus.index]) focus = doc.parts.length ? { kind: "part", index: 0 } : { kind: "fit" };
 }
 
 // ── Pieces of the page ────────────────────────────────────────────────────────
@@ -75,14 +75,14 @@ const redoBtn = h("button", { text: "Redo", title: "Redo (Ctrl+Y)", onclick: red
 const openSelect = h("select", { title: "Edit a skin you installed" }) as HTMLSelectElement;
 const picturesBox = h("div", { class: "panel-body" });
 const partBox = h("div", { class: "panel-body" });
-const faceBox = h("div", { class: "panel-body" });
-const exprBox = h("div", { class: "panel-body" });
+const fitBox = h("div", { class: "panel-body" });
+const colourBox = h("div", { class: "panel-body" });
 const aboutBox = h("div", { class: "panel-body" });
 const zoomLabel = h("span", { class: "hint" });
 const stageHint = h("div", { class: "stage-hint" });
 const dropNote = h("div", { class: "drop-note" },
-  h("div", { class: "drop-title", text: "Drop a picture of your character here" }),
-  h("div", { class: "hint", text: "A PNG with a transparent background works best (a plain background can be removed). One picture is enough to start: you can split hair, arms or a bow into their own pictures later." }),
+  h("div", { class: "drop-title", text: "Drop the hair of your character here" }),
+  h("div", { class: "hint", text: "A PNG with a transparent background works best (a plain background can be removed). One picture is enough to start: you can split the fringe, side locks and a bow into their own pictures later. Mochi keeps its own body and eyes; this is only what goes on top." }),
   h("button", { class: "primary", text: "Choose pictures…", onclick: () => pickFiles((files) => void addPictures(files)) }),
 );
 
@@ -123,7 +123,7 @@ async function readImage(file: File): Promise<ImageBitmap | null> {
 function uniqueId(base: string): string {
   const b = slug(base) || "part";
   let id = b, n = 2;
-  while (doc.parts.some((p) => p.id === id) || id === "iris") id = `${b}-${n++}`;
+  while (doc.parts.some((p) => p.id === id)) id = `${b}-${n++}`;
   return id;
 }
 
@@ -150,11 +150,11 @@ async function addPictures(files: File[]) {
     const part: Part = {
       img: addToPool(img), x: 0, y: 0, scale: 1,
       id: uniqueId(name), name,
-      role: first ? "head" : "front",
-      motion: "still", feel: "floppy", mirrored: false, pivot: [0, 0], tipY: 0, original,
+      role: first ? "back" : "front",
+      motion: "still", feel: "floppy", mirrored: false, follow: true, pivot: [0, 0], tipY: 0, original,
     };
     if (first) {
-      guessFromFirst(doc, part);
+      guessFit(doc, part);
       if (!doc.name) doc.name = name.slice(0, 40);
     } else {
       // Same size as the first picture: drawn on the same canvas, it lines up as is.
@@ -171,39 +171,9 @@ async function addPictures(files: File[]) {
   if (loaded.length && doc.parts.length === loaded.length) stage.fit();
   const bg = cleared ? " The plain background was removed (Restore original if it took too much)." : "";
   say((doc.parts.length === loaded.length
-    ? "Now check the face: drag the eyes, cheeks and head circle onto your picture."
+    ? "Now line it up: drag the blue Mochi so its eyes sit where the face goes."
     : `${loaded.length === 1 ? "Picture" : "Pictures"} added. Drag to move, use the corner to resize.`) + bg, "ok");
-  if (doc.parts.length === loaded.length) focus = { kind: "face" };
-  refresh(true);
-}
-
-async function addExpression(mood: Mood, file: File) {
-  const img = await readImage(file);
-  if (!img) return;
-  checkpoint();
-  const placed: Placed = { img: addToPool(img), x: 0, y: 0, scale: 1 };
-  if (img.width >= doc.w * 0.8 || img.height >= doc.h * 0.8) {
-    // Drawn on the full canvas, like the other pictures: lines up as is.
-    placed.scale = Math.min(doc.w / img.width, doc.h / img.height);
-  } else {
-    // Just a face: fit it into the face area.
-    const b = doc.cover;
-    placed.scale = Math.min((b.x1 - b.x0) / img.width, (b.y1 - b.y0) / img.height);
-    placed.x = Math.round((b.x0 + b.x1) / 2 - (img.width * placed.scale) / 2);
-    placed.y = Math.round((b.y0 + b.y1) / 2 - (img.height * placed.scale) / 2);
-  }
-  // The first face sets the face area: around what it draws, a little wider.
-  if (!Object.keys(doc.expressions).length) {
-    const b = opaqueBox(bake(doc, [placed]));
-    if (b) {
-      const pad = doc.head.r * 0.1;
-      doc.cover = { x0: b.x0 - pad, y0: b.y0 - pad, x1: b.x1 + pad, y1: b.y1 + pad };
-    }
-  }
-  doc.expressions[mood] = placed;
-  focus = { kind: "expr", mood };
-  stage.invalidate();
-  say("Move the face over the purple face area; that area is painted with the skin colour first.", "ok");
+  if (doc.parts.length === loaded.length) focus = { kind: "fit" };
   refresh(true);
 }
 
@@ -220,10 +190,7 @@ window.addEventListener("drop", (e) => {
   document.body.classList.remove("dragging");
   const files = Array.from(e.dataTransfer?.files ?? []).filter((f) => f.type.startsWith("image/"));
   if (!files.length) return;
-  // Dropped on an expression tile: that mood's face.
-  const tile = (e.target as HTMLElement).closest?.("[data-mood]") as HTMLElement | null;
-  if (tile?.dataset.mood) void addExpression(tile.dataset.mood as Mood, files[0]);
-  else void addPictures(files);
+  void addPictures(files);
 });
 
 // ── Small UI helpers ──────────────────────────────────────────────────────────
@@ -240,33 +207,6 @@ function segmented<T extends string>(value: T, options: [T, string][], onPick: (
       h("button", { class: v === value ? "on" : "", text: label, onclick: () => onPick(v) }),
     ),
   );
-}
-
-function colourField(label: string, value: string, set: (v: string) => void, pickable = false): HTMLElement {
-  const input = h("input", { type: "color", value }) as HTMLInputElement;
-  input.addEventListener("input", () => {
-    set(input.value);
-    refresh(false);
-  });
-  input.addEventListener("change", () => refresh(true));
-  input.addEventListener("pointerdown", () => checkpoint());
-  const picker = pickable
-    ? h("button", {
-        class: "small",
-        text: "Pick from picture",
-        onclick: () => {
-          say("Click on your picture to take its colour.");
-          stage.pickColour = (hex) => {
-            if (!hex) return say("There's nothing there to take a colour from.", "err");
-            checkpoint();
-            set(hex);
-            say("");
-            refresh(true);
-          };
-        },
-      })
-    : null;
-  return field(label, h("div", { class: "row" }, input, picker));
 }
 
 function thumb(placed: Placed, size = 34): HTMLCanvasElement {
@@ -287,10 +227,9 @@ function thumb(placed: Placed, size = 34): HTMLCanvasElement {
 // ── Panels ────────────────────────────────────────────────────────────────────
 
 const ROLES: [PartRole, string][] = [
-  ["head", "Head"],
-  ["back", "Behind the head"],
-  ["front", "In front"],
-  ["iris", "Irises (follow the pointer)"],
+  ["back", "Behind Mochi"],
+  ["front", "Over the head"],
+  ["top", "Over the eyes"],
 ];
 
 function renderPictures() {
@@ -352,29 +291,34 @@ function renderPart() {
   name.addEventListener("change", () => set(() => (part.name = name.value.trim() || part.name)));
   partBox.append(
     field("Name", name),
-    field("What is it", segmented(part.role, ROLES, (v) => set(() => (part.role = v)))),
+    field("Where it goes", segmented(part.role, ROLES, (v) => set(() => (part.role = v)))),
   );
-  if (part.role !== "iris") {
-    partBox.append(field("Movement", segmented<Motion>(part.motion, [
-      ["still", "Still"], ["swing", "Swings"], ["bend", "Bends like hair"],
-    ], (v) => set(() => {
-      part.motion = v;
-      if (v !== "still") placeMotion(doc, part);
-    }))));
-    if (part.motion !== "still") {
-      const mirrored = h("input", { type: "checkbox" }) as HTMLInputElement;
-      mirrored.checked = part.mirrored;
-      mirrored.addEventListener("change", () => set(() => (part.mirrored = mirrored.checked)));
-      partBox.append(
-        field("Feel", segmented<Feel>(part.feel, [["floppy", "Floppy"], ["bouncy", "Bouncy"], ["subtle", "Subtle"]], (v) => set(() => (part.feel = v)))),
-        h("label", { class: "check" }, mirrored, h("span", { text: "Swing the other way (for the right one of a pair)" })),
-        h("div", { class: "hint", text: part.motion === "bend"
-          ? "Drag the orange dots: the root stays put, the tip whips the most."
-          : "Drag the orange dot to where it hangs from (a shoulder, a hair tie)." }),
-      );
-    }
-  } else {
-    partBox.append(h("div", { class: "hint", text: "Just the coloured part of the eyes. It slides inside the eye outlines to look at the pointer." }));
+  if (part.role === "top") {
+    const follow = h("input", { type: "checkbox" }) as HTMLInputElement;
+    follow.checked = part.follow;
+    follow.addEventListener("change", () => set(() => (part.follow = follow.checked)));
+    partBox.append(
+      h("label", { class: "check" }, follow, h("span", { text: "Moves with Mochi's eyes (glasses)" })),
+      h("div", { class: "hint", text: "Drawn over the eyes too. Switch it off for something that stays where it is." }),
+    );
+  }
+  partBox.append(field("Movement", segmented<Motion>(part.motion, [
+    ["still", "Still"], ["swing", "Swings (a bow)"], ["bend", "Bends like hair"],
+  ], (v) => set(() => {
+    part.motion = v;
+    if (v !== "still") placeMotion(doc, part);
+  }))));
+  if (part.motion !== "still") {
+    const mirrored = h("input", { type: "checkbox" }) as HTMLInputElement;
+    mirrored.checked = part.mirrored;
+    mirrored.addEventListener("change", () => set(() => (part.mirrored = mirrored.checked)));
+    partBox.append(
+      field("Feel", segmented<Feel>(part.feel, [["floppy", "Floppy"], ["bouncy", "Bouncy"], ["subtle", "Subtle"]], (v) => set(() => (part.feel = v)))),
+      h("label", { class: "check" }, mirrored, h("span", { text: "Swing the other way (for the right one of a pair)" })),
+      h("div", { class: "hint", text: part.motion === "bend"
+        ? "Drag the orange dots: the root stays put, the tip whips the most."
+        : "Drag the orange dot to where it hangs from (a hair tie, the middle of a bow)." }),
+    );
   }
   partBox.append(
     h("div", { class: "row" },
@@ -419,78 +363,84 @@ function renderPart() {
   );
 }
 
-function renderFace() {
-  clear(faceBox);
-  const on = focus.kind === "face";
-  const pixel = h("input", { type: "checkbox" }) as HTMLInputElement;
-  pixel.checked = doc.pixel;
-  pixel.addEventListener("change", () => {
-    checkpoint();
-    doc.pixel = pixel.checked;
-    stage.invalidate();
-    refresh(true);
-  });
-  faceBox.append(
+function renderFit() {
+  clear(fitBox);
+  const on = focus.kind === "fit";
+  const number = (label: string, get: () => number, set: (v: number) => void) => {
+    const input = h("input", { type: "number", value: String(Math.round(get())), step: "1", min: "20" }) as HTMLInputElement;
+    input.addEventListener("focus", () => checkpoint());
+    input.addEventListener("input", () => {
+      const v = Number(input.value);
+      if (!Number.isFinite(v) || v <= 0) return;
+      set(v);
+      dirty = true;
+      refresh(false);
+    });
+    return field(label, input);
+  };
+  fitBox.append(
     h("button", {
       class: on ? "primary" : "",
-      text: on ? "Adjusting the face" : "Adjust the face",
-      onclick: () => { focus = { kind: "face" }; refresh(true); },
+      text: on ? "Lining up with Mochi" : "Line up with Mochi",
+      onclick: () => { focus = { kind: "fit" }; refresh(true); },
     }),
-    h("div", { class: "hint", text: "Blue: the head circle and its size. Green: the eyes (they blink there). Orange: the chin, where it squashes and tilts from. Pink: the cheeks." }),
-    colourField("Skin around the eyes (for blinking)", doc.lid, (v) => {
-      doc.lid = v;
-      doc.lidAuto = false;
-    }, true),
-    h("div", { class: "hint", text: doc.lidAuto ? "Taken from under the eyes; it follows them as you move them." : "Picked by you." }),
-    colourField("Eyelashes and drawn eyes", doc.lash, (v) => (doc.lash = v), true),
-    colourField("Blush", doc.blush, (v) => (doc.blush = v)),
-    h("label", { class: "check" }, pixel, h("span", { text: "Pixel art (keep edges sharp)" })),
+    h("div", { class: "hint", text: "The blue shape is Mochi's head and the dark ovals its eyes. Drag the ring to move it, the dot to change its width, the square its height. The fringe should end around the eyes, and the hair should cover the top of the head." }),
+    number("Width", () => doc.fit.width, (v) => (doc.fit.width = v)),
+    number("Height", () => doc.fit.height, (v) => (doc.fit.height = v)),
+    number("Face centre (x)", () => doc.fit.centerX, (v) => (doc.fit.centerX = v)),
+    number("Eye line (y)", () => doc.fit.eyeLine, (v) => (doc.fit.eyeLine = v)),
+    h("div", { class: "hint", text: "Smaller width or height makes the hair bigger on Mochi." }),
   );
 }
 
-function renderExpressions() {
-  clear(exprBox);
-  exprBox.append(h("div", { class: "hint", text: "Optional: a drawn face for each mood. Moods without one use Mochi's eyes in your eyelash colour. Click a mood, or drop a picture on it." }));
-  const grid = h("div", { class: "moods" });
-  for (const [mood, label] of MOODS) {
-    const placed = doc.expressions[mood];
-    const on = focus.kind === "expr" && focus.mood === mood;
-    grid.append(
-      h(
-        "div",
-        {
-          class: `mood${on ? " on" : ""}${placed ? " has" : ""}`,
-          "data-mood": mood,
-          title: placed ? "Click to place it" : "Click to add a picture",
-          onclick: () => {
-            if (placed) {
-              focus = { kind: "expr", mood };
-              stage.invalidate();
-              refresh(true);
-            } else {
-              pickFiles((f) => void addExpression(mood, f[0]), false);
-            }
-          },
-        },
-        placed ? thumb(placed, 30) : h("div", { class: "plus", text: "+" }),
-        h("span", { text: label }),
-        placed
-          ? h("button", {
-              class: "icon", title: "Remove this face", text: "✕",
-              onclick: (e: Event) => {
-                e.stopPropagation();
-                checkpoint();
-                delete doc.expressions[mood];
-                fixFocus();
-                stage.invalidate();
-                refresh(true);
-              },
-            })
-          : null,
-      ),
-    );
-  }
-  exprBox.append(grid);
+/** Mochi's own grey first, then skin tones, then a few for fun. */
+const SKIN_COLOURS: [string, string][] = [
+  ["", "Mochi grey"],
+  ["#f6d9c4", "Fair"],
+  ["#efbf9a", "Peach"],
+  ["#d9a07a", "Tan"],
+  ["#a9714e", "Brown"],
+  ["#6f4630", "Deep"],
+  ["#f4b6c8", "Pink"],
+  ["#b6e3cf", "Mint"],
+  ["#c9b8f0", "Lavender"],
+  ["#afd3f5", "Sky"],
+];
+const MOCHI_GREY = "#c4c5ca";
+
+/** The body colour this skin gives Mochi; the live preview follows as you pick. */
+function renderColours() {
+  clear(colourBox);
+  const current = doc.skinColor.toLowerCase();
+  const pick = (value: string, keep: boolean) => {
+    if (doc.skinColor === value) return;
+    if (keep) checkpoint();
+    doc.skinColor = value;
+    dirty = true;
+    refresh(keep);
+  };
+  const swatches = SKIN_COLOURS.map(([value, label]) =>
+    h("button", {
+      class: value === current ? "swatch on" : "swatch",
+      title: label,
+      "aria-label": label,
+      style: `--c:${value || MOCHI_GREY}`,
+      onclick: () => pick(value, true),
+    }),
+  );
+  const custom = h("input", { type: "color", title: "Pick any colour", value: doc.skinColor || MOCHI_GREY }) as HTMLInputElement;
+  // Dragging inside the colour picker only previews; the colour is kept when it closes.
+  custom.addEventListener("pointerdown", () => checkpoint());
+  custom.addEventListener("input", () => pick(custom.value, false));
+  custom.addEventListener("change", () => {
+    doc.skinColor = custom.value;
+    dirty = true;
+    refresh(true);
+  });
+  colourBox.append(
+    field("Skin colour", h("div", { class: "swatches" }, ...swatches, custom)),
+    h("div", { class: "hint", text: "The colour of Mochi's body (and hands) while this skin is worn. Hair keeps its own colours." }),
+  );
 }
 
 function renderAbout() {
@@ -529,8 +479,7 @@ function panel(title: string, body: HTMLElement, open = true): HTMLElement {
 function renderStageHint() {
   const hints: Record<Focus["kind"], string> = {
     part: "Drag the picture to move it, the blue square to resize it. Drag empty space to pan, scroll to zoom.",
-    face: "Drag the dots onto your picture. Scroll to zoom in for the eyes.",
-    expr: "Drag the face picture into place over the purple face area.",
+    fit: "Drag the blue Mochi until its eyes sit where the face goes. Scroll to zoom.",
   };
   stageHint.textContent = doc.parts.length ? hints[focus.kind] : "";
   dropNote.style.display = doc.parts.length ? "none" : "";
@@ -543,31 +492,27 @@ let previewTimer = 0;
 function schedulePreview() {
   window.clearTimeout(previewTimer);
   previewTimer = window.setTimeout(() => {
-    void preview.wear(doc.parts.some((p) => p.role === "head") ? build(doc) : null);
+    void preview.wear(doc.parts.length ? build(doc) : null);
   }, 220);
 }
 
 /** `full`: the panels are rebuilt too (not during a drag, which only moves things). */
 function refresh(full: boolean) {
-  // Moving the eyes moves where the skin colour is read from (until one is picked).
-  if (focus.kind === "face" && doc.lidAuto && doc.parts.length) {
-    const lid = skinNearEyes(doc, stage.figure());
-    if (lid && lid !== doc.lid) {
-      doc.lid = lid;
-      if (!full) renderFace();
-    }
-  }
   if (nameInput.value !== doc.name && document.activeElement !== nameInput) nameInput.value = doc.name;
   stage.draw();
   schedulePreview();
   undoBtn.disabled = !past.length;
   redoBtn.disabled = !future.length;
   renderStageHint();
-  if (!full) return;
+  if (!full) {
+    // A drag on the canvas moves the fit: its numbers follow (unless one is being typed in).
+    if (!fitBox.contains(document.activeElement)) renderFit();
+    return;
+  }
   renderPictures();
   renderPart();
-  renderFace();
-  renderExpressions();
+  renderFit();
+  renderColours();
 }
 
 stage.onZoom = () => (zoomLabel.textContent = `${stage.zoomPercent}%`);
@@ -649,10 +594,26 @@ function confirmDiscard(): boolean {
   return !dirty || window.confirm("Discard the changes to this skin?");
 }
 
+/** A new skin that starts from the bundled example, so there is something working to change. */
+async function startExample() {
+  if (!confirmDiscard()) return;
+  doc = await exampleDoc();
+  focus = { kind: "fit" };
+  past = [];
+  future = [];
+  dirty = true;
+  stage.invalidate();
+  stage.fit();
+  preview.play(PREVIEW_MOODS[0]);
+  say("This is the example skin: change the pictures, move the fit, or add your own.", "ok");
+  refresh(true);
+  renderAbout();
+}
+
 function startNew() {
   if (!confirmDiscard()) return;
   doc = emptyDoc();
-  focus = { kind: "face" };
+  focus = { kind: "fit" };
   past = [];
   future = [];
   dirty = false;
@@ -675,18 +636,16 @@ async function openInstalled(id: string) {
   } catch {
     return say("That skin's manifest can't be read.", "err");
   }
-  const names = new Set<string>();
-  for (const l of Array.isArray(m.layers) ? m.layers : []) if (typeof l?.src === "string") names.add(l.src);
-  if (typeof m.iris?.src === "string") names.add(m.iris.src);
-  for (const v of Object.values(m.expressions ?? {})) if (typeof v === "string") names.add(v);
+  const parsed = parseManifest(m);
+  if (typeof parsed === "string") return say(`That skin can't be opened: ${parsed}.`, "err");
   const images = new Map<string, ImageBitmap>();
-  for (const n of names) {
-    const bytes = await Bridge.skinLayer(id, n);
-    if (bytes) images.set(n, await createImageBitmap(new Blob([bytes], { type: "image/png" })));
+  for (const l of parsed.layers) {
+    const bytes = await Bridge.skinLayer(id, l.src);
+    if (bytes) images.set(l.src, await createImageBitmap(new Blob([bytes], { type: "image/png" })));
   }
-  doc = fromManifest(id, m, images);
+  doc = fromManifest(id, parsed, String(m.author ?? ""), String(m.note ?? ""), images);
   if (Math.max(doc.w, doc.h) > MAX_SIDE) say("This skin is very large; saving may be slow.");
-  focus = doc.parts.length ? { kind: "part", index: 0 } : { kind: "face" };
+  focus = doc.parts.length ? { kind: "part", index: 0 } : { kind: "fit" };
   past = [];
   future = [];
   dirty = false;
@@ -723,6 +682,7 @@ root.replaceChildren(
     h("div", { class: "title", text: "Skin editor" }),
     nameInput,
     h("button", { text: "New", onclick: startNew }),
+    h("button", { text: "From example", title: "Start from the bundled flat-colour example", onclick: () => void startExample() }),
     openSelect,
     undoBtn,
     redoBtn,
@@ -734,8 +694,8 @@ root.replaceChildren(
     h("aside", { class: "side" },
       panel("1. Pictures", picturesBox),
       panel("Selected picture", partBox),
-      panel("2. Face", faceBox),
-      panel("3. Expressions", exprBox, false),
+      panel("2. Fit on Mochi", fitBox),
+      panel("3. Colours", colourBox),
       panel("4. About", aboutBox, false),
     ),
     h("section", { class: "canvas-area" },
@@ -752,7 +712,7 @@ root.replaceChildren(
       h("div", { class: "right-title", text: "Live preview" }),
       preview.el,
       preview.status,
-      h("div", { class: "hint", text: "Move your pointer around: it looks at you. Try the moods:" }),
+      h("div", { class: "hint", text: "This is Mochi wearing your skin. Move your pointer around: it looks at you. Try the moods:" }),
       moodButtons,
       h("div", { class: "spacer" }),
       status,
@@ -781,9 +741,6 @@ window.addEventListener("keydown", (e) => {
   } else if (combo === binding(keys, "editor.redo") || combo === "Ctrl+Shift+Z") {
     e.preventDefault();
     redo();
-  } else if (combo === binding(keys, "editor.cancel") && stage.pickColour) {
-    stage.pickColour = null;
-    say("");
   }
 });
 

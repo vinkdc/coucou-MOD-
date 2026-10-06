@@ -1,4 +1,4 @@
-// One chat loop over either provider (Claude or Gemini): call the model, run
+// One chat loop over any provider (Claude, Gemini or DeepSeek): call the model, run
 // the tools it asks for, repeat until it answers in plain text. The tools are
 // the tutor's bookkeeping (see tutor.rs) — nothing here touches the PC.
 
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 
-use crate::{claude, gemini, secrets};
+use crate::{claude, deepseek, gemini, secrets};
 
 /// Tool rounds per message: log progress, maybe assess, then answer.
 const MAX_ROUNDS: usize = 6;
@@ -162,22 +162,36 @@ pub fn obj(props: Value, required: &[&str]) -> Option<Value> {
 pub enum Provider {
     Claude,
     Gemini,
+    DeepSeek,
 }
 
 impl Provider {
     pub fn from_setting(s: &str) -> Self {
-        if s == "gemini" { Provider::Gemini } else { Provider::Claude }
+        match s {
+            "gemini" => Provider::Gemini,
+            "deepseek" => Provider::DeepSeek,
+            _ => Provider::Claude,
+        }
     }
     fn key_name(self) -> &'static str {
         match self {
             Provider::Claude => "anthropic-api-key",
             Provider::Gemini => "gemini-api-key",
+            Provider::DeepSeek => "deepseek-api-key",
         }
     }
     fn id(self) -> &'static str {
         match self {
             Provider::Claude => "claude",
             Provider::Gemini => "gemini",
+            Provider::DeepSeek => "deepseek",
+        }
+    }
+    fn label(self) -> &'static str {
+        match self {
+            Provider::Claude => "Claude",
+            Provider::Gemini => "Gemini",
+            Provider::DeepSeek => "DeepSeek",
         }
     }
 }
@@ -203,15 +217,15 @@ pub async fn run_turn(
     stream: Stream<'_>,
     exec: &(dyn Fn(&ToolCall) -> ToolOutput + Sync),
 ) -> Result<ChatReply, String> {
-    let key = secrets::get(provider.key_name()).ok_or_else(|| {
-        format!("{} API key missing. Open Settings.", if provider == Provider::Gemini { "Gemini" } else { "Claude" })
-    })?;
+    let key = secrets::get(provider.key_name())
+        .ok_or_else(|| format!("{} API key missing. Open Settings.", provider.label()))?;
     chat.adopt(provider.id());
     // "Automatic" Gemini: if the chosen model turns out to have no quota on this
     // key, it moves on to the next candidate instead of failing.
     let automatic = provider == Provider::Gemini && model.is_empty();
     let mut model = match provider {
         Provider::Gemini if automatic => gemini::default_model(&key).await?,
+        Provider::DeepSeek if model.is_empty() => deepseek::default_model(&key).await?,
         _ => model.to_string(),
     };
     let mut fallbacks = 0;
@@ -222,6 +236,7 @@ pub async fn run_turn(
     chat.push(match provider {
         Provider::Claude => claude::user_message(&query, None),
         Provider::Gemini => gemini::user_message(&query, None),
+        Provider::DeepSeek => deepseek::user_message(&query),
     });
 
     let mut texts: Vec<String> = Vec::new();
@@ -241,6 +256,7 @@ pub async fn run_turn(
         let turn = match provider {
             Provider::Claude => claude::turn(&key, &model, system, &history, defs, &mut on_text).await,
             Provider::Gemini => gemini::turn(&key, &model, automatic, system, &history, defs, &mut on_text).await,
+            Provider::DeepSeek => deepseek::turn(&key, &model, system, &history, defs, &mut on_text).await,
         };
         if automatic {
             if let Ok(m) = gemini::default_model(&key).await {
@@ -297,10 +313,12 @@ pub async fn run_turn(
                 (call, output)
             })
             .collect();
-        chat.push(match provider {
-            Provider::Claude => claude::tool_results(&results),
-            Provider::Gemini => gemini::tool_results(&results),
-        });
+        match provider {
+            Provider::Claude => chat.push(claude::tool_results(&results)),
+            Provider::Gemini => chat.push(gemini::tool_results(&results)),
+            // One `tool` message per call, not one message for the round.
+            Provider::DeepSeek => deepseek::tool_results(&results).into_iter().for_each(|m| chat.push(m)),
+        }
     }
     if texts.is_empty() {
         chat.truncate(start);

@@ -10,11 +10,11 @@
   --font: "Inter Variable", system-ui, "Segoe UI Variable Text", "Segoe UI", "Yu Gothic UI", "Meiryo", "Noto Sans CJK JP", sans-serif;
   --font-ja: "Inter Variable", "Yu Gothic UI", "Yu Gothic", "Meiryo", "Hiragino Sans", "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
 
-  --bg: #0b0c0e;
-  --panel: #141518;
-  --card: #1d1f23;
-  --card-2: #25272c;
-  --well: #0e0f11;
+  --bg: #000;
+  --panel: #070708;
+  --card: #0e0f11;
+  --card-2: #17181b;
+  --well: #030304;
   --groove: rgba(0, 0, 0, 0.45);
   --ink: #f5f6f8;
   --ink-2: #d9dce1;

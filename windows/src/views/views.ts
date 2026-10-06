@@ -299,6 +299,7 @@ function buildReview(actions: ViewActions): ViewHost {
         revealed: r.revealed,
         compact: true,
         onDone: () => {
+          if (State.review?.token === handled) State.review.done = true;
           // A finished session leaves the island open a moment, then lets it go.
           window.setTimeout(() => {
             if (State.view === "review" && State.review?.token === handled) actions.releasePin();

@@ -1,13 +1,16 @@
-// The skin editor's document: the pictures and where they sit, the face points,
-// how each part moves and the expression pictures. Plain data (pictures are
-// kept by key in a pool), so undo is a copy of it. From it comes a skin bundle
-// exactly like an imported one (docs/SKINS.md): a manifest and full-size PNGs.
+// The skin editor's document: the hair pictures, how each moves and where they
+// sit on Mochi's head. Plain data (pictures are kept by key in a pool), so undo
+// is a copy of it. From it comes a skin bundle exactly like an imported one
+// (docs/SKINS.md): a manifest and full-size PNGs. Mochi keeps its own body and
+// eyes; the bundle is only hair and a bow.
 
+import { FORMAT, type Manifest } from "../mochi/manifest";
 import type { Pt } from "../mochi/puppet";
 
 // ── Model ─────────────────────────────────────────────────────────────────────
 
-export type PartRole = "back" | "head" | "front" | "iris";
+/** `back` sits behind Mochi's body, `front` over it but under the eyes, `top` over the eyes too. */
+export type PartRole = "back" | "front" | "top";
 export type Motion = "still" | "swing" | "bend";
 export type Feel = "floppy" | "bouncy" | "subtle";
 
@@ -27,6 +30,8 @@ export interface Part extends Placed {
   feel: Feel;
   /** Swings the other way (for the right-hand one of a pair). */
   mirrored: boolean;
+  /** A `top` picture that slides with Mochi's eyes (glasses) rather than staying put. */
+  follow: boolean;
   /** Pivot for a swing, root for a bend. */
   pivot: Pt;
   /** Where a bend ends (its tip); the further down, the longer the whip. */
@@ -42,21 +47,13 @@ export interface Box {
   y1: number;
 }
 
-/** Mochi's eye names: every mood and emote shows one of these. */
-export const MOODS = [
-  ["closed", "Blink / asleep"],
-  ["happy", "Happy / done"],
-  ["wide", "Surprised / needs you"],
-  ["flat", "Error"],
-  ["tired", "Tired / rate-limited"],
-  ["spiral", "Dizzy"],
-  ["heart", "In love"],
-  ["star", "Proud"],
-  ["wink", "Wink"],
-  ["line", "Annoyed"],
-  ["dot", "Startled"],
-] as const;
-export type Mood = (typeof MOODS)[number][0];
+/** Where the pictures sit on Mochi (see Fit in mochi/manifest.ts). */
+export interface Fit {
+  width: number;
+  height: number;
+  centerX: number;
+  eyeLine: number;
+}
 
 export interface Doc {
   name: string;
@@ -67,21 +64,10 @@ export interface Doc {
   id: string | null;
   w: number;
   h: number;
-  /** Sharp pixels when a picture is scaled (pixel art). */
-  pixel: boolean;
   parts: Part[];
-  head: { cx: number; cy: number; r: number };
-  chin: number;
-  eyes: [Box, Box];
-  cheeks: [Pt, Pt];
-  /** The face area an expression picture replaces. */
-  cover: Box;
-  lid: string;
-  /** The skin colour follows the eyes until the user picks one. */
-  lidAuto: boolean;
-  lash: string;
-  blush: string;
-  expressions: Partial<Record<Mood, Placed>>;
+  fit: Fit;
+  /** Body colour as #rrggbb; empty = Mochi's own grey. */
+  skinColor: string;
 }
 
 /** The pictures, by key. Never part of undo: a key always means the same picture. */
@@ -105,21 +91,9 @@ export function emptyDoc(): Doc {
     id: null,
     w,
     h,
-    pixel: false,
     parts: [],
-    head: { cx: w / 2, cy: h / 2, r: w * 0.35 },
-    chin: h * 0.8,
-    eyes: [
-      { x0: w * 0.36, y0: h * 0.42, x1: w * 0.44, y1: h * 0.52 },
-      { x0: w * 0.56, y0: h * 0.42, x1: w * 0.64, y1: h * 0.52 },
-    ],
-    cheeks: [[w * 0.33, h * 0.6], [w * 0.67, h * 0.6]],
-    cover: { x0: w * 0.3, y0: h * 0.38, x1: w * 0.7, y1: h * 0.66 },
-    lid: "#f2d6c4",
-    lidAuto: true,
-    lash: "#231a1c",
-    blush: "#ff8c9b",
-    expressions: {},
+    fit: { width: w * 0.29, height: h * 0.39, centerX: w / 2, eyeLine: h * 0.63 },
+    skinColor: "",
   };
 }
 
@@ -132,7 +106,6 @@ export function bake(doc: Doc, items: Placed[], into?: HTMLCanvasElement): HTMLC
   c.height = doc.h;
   const x = c.getContext("2d", { willReadFrequently: true })!;
   x.clearRect(0, 0, doc.w, doc.h);
-  x.imageSmoothingEnabled = !doc.pixel;
   x.imageSmoothingQuality = "high";
   for (const p of items) {
     const img = pool.get(p.img);
@@ -157,15 +130,6 @@ export function opaqueBox(c: HTMLCanvasElement): Box | null {
     }
   }
   return x1 < 0 ? null : { x0, y0, x1: x1 + 1, y1: y1 + 1 };
-}
-
-/** The colour at a point of the composed figure, as #rrggbb (null if empty there). */
-export function colourAt(c: HTMLCanvasElement, px: number, py: number): string | null {
-  const x = Math.round(px), y = Math.round(py);
-  if (x < 0 || y < 0 || x >= c.width || y >= c.height) return null;
-  const [r, g, b, a] = c.getContext("2d", { willReadFrequently: true })!.getImageData(x, y, 1, 1).data;
-  if (a < 40) return null;
-  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 }
 
 /** True when all four corners are the same solid colour: a backdrop, not the character. */
@@ -219,14 +183,16 @@ export async function removeBackground(img: ImageBitmap, tolerance = 48): Promis
   return createImageBitmap(c);
 }
 
-// ── First picture: a good guess at everything ─────────────────────────────────
+// ── First picture: a good guess at the fit ────────────────────────────────────
 
 /**
- * Called when the first picture goes in. Sizes the canvas to it and guesses the
- * head, eyes, cheeks, face area and skin colour from where it has paint, so a
- * single picture already makes a working skin; the user then only nudges.
+ * Called when the first picture goes in. Sizes the canvas to it and guesses how
+ * it sits on Mochi from where it has paint, so a single picture already makes a
+ * working skin; the user then only nudges. The ratios are the bundled example's
+ * (Tokai Teio): hair about 3.2 Mochi radii wide and 2.2 tall, the eye line a
+ * little over half way down.
  */
-export function guessFromFirst(doc: Doc, part: Part) {
+export function guessFit(doc: Doc, part: Part) {
   const img = pool.get(part.img)!;
   const fit = Math.min(1, MAX_SIDE / Math.max(img.width, img.height));
   doc.w = Math.round(img.width * fit);
@@ -234,73 +200,14 @@ export function guessFromFirst(doc: Doc, part: Part) {
   part.x = 0;
   part.y = 0;
   part.scale = fit;
-  const c = bake(doc, [part]);
-  const b = opaqueBox(c) ?? { x0: 0, y0: 0, x1: doc.w, y1: doc.h };
+  const b = opaqueBox(bake(doc, [part])) ?? { x0: 0, y0: 0, x1: doc.w, y1: doc.h };
   const bw = b.x1 - b.x0, bh = b.y1 - b.y0;
-  const r = Math.min(bw, bh) * 0.45;
-  const cx = (b.x0 + b.x1) / 2;
-  const cy = b.y0 + Math.min(bh * 0.45, r * 1.05);
-  doc.head = { cx, cy, r };
-  doc.chin = Math.min(b.y1, cy + r * 1.1);
-  const ew = r * 0.16, eh = r * 0.2, ey = cy - r * 0.02;
-  doc.eyes = [
-    { x0: cx - r * 0.38 - ew, y0: ey - eh, x1: cx - r * 0.38 + ew, y1: ey + eh },
-    { x0: cx + r * 0.38 - ew, y0: ey - eh, x1: cx + r * 0.38 + ew, y1: ey + eh },
-  ];
-  doc.cheeks = [[cx - r * 0.5, cy + r * 0.3], [cx + r * 0.5, cy + r * 0.3]];
-  // Eyes and mouth: what a drawn expression usually replaces.
-  doc.cover = { x0: cx - r * 0.7, y0: ey - eh * 1.6, x1: cx + r * 0.7, y1: cy + r * 0.38 };
-  doc.lid = skinNearEyes(doc, c) ?? doc.lid;
-  doc.pixel = looksLikePixelArt(c);
-}
-
-/**
- * The skin colour around the eyes — what an eyelid is painted with. Sampled
- * just under and beside each eye (hair often sits between and above them),
- * and the colour most of those points agree on wins.
- */
-export function skinNearEyes(doc: Doc, c: HTMLCanvasElement): string | null {
-  const points: [number, number][] = [];
-  for (const e of doc.eyes) {
-    const w = e.x1 - e.x0, h = e.y1 - e.y0, mx = (e.x0 + e.x1) / 2;
-    points.push(
-      [mx, e.y1 + h * 0.35], [mx - w * 0.3, e.y1 + h * 0.3], [mx + w * 0.3, e.y1 + h * 0.3],
-      [mx, e.y1 + h * 0.6], [e.x0 - w * 0.25, (e.y0 + e.y1) / 2 + h * 0.3], [e.x1 + w * 0.25, (e.y0 + e.y1) / 2 + h * 0.3],
-    );
-  }
-  const between = (doc.eyes[0].x1 + doc.eyes[1].x0) / 2;
-  points.push([between, Math.max(doc.eyes[0].y1, doc.eyes[1].y1)]);
-  const hex = points.map(([x, y]) => colourAt(c, x, y)).filter((v): v is string => !!v);
-  if (!hex.length) return null;
-  const rgb = (s: string) => [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16));
-  const close = (a: string, b: string) => rgb(a).reduce((sum, v, i) => sum + Math.abs(v - rgb(b)[i]), 0) < 45;
-  // Ties go to the lighter colour: skin is usually lighter than lashes and shadows.
-  const light = (s: string) => rgb(s).reduce((a, b) => a + b, 0);
-  let best = hex[0], votes = 0;
-  for (const h of hex) {
-    const n = hex.filter((o) => close(h, o)).length;
-    if (n > votes || (n === votes && light(h) > light(best))) {
-      best = h;
-      votes = n;
-    }
-  }
-  return best;
-}
-
-/** Few colours and hard edges: drawn as pixel art, so it should stay sharp. */
-function looksLikePixelArt(c: HTMLCanvasElement): boolean {
-  const d = c.getContext("2d", { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data;
-  const colours = new Set<number>();
-  let soft = 0, solid = 0;
-  for (let i = 0; i < d.length; i += 4 * 7) {
-    const a = d[i + 3];
-    if (a === 0) continue;
-    if (a < 250) soft++;
-    else solid++;
-    colours.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
-    if (colours.size > 48) return false;
-  }
-  return solid > 0 && soft / (solid + soft) < 0.02;
+  doc.fit = {
+    width: Math.round(bw / 3.2),
+    height: Math.round(bh / 2.2),
+    centerX: Math.round((b.x0 + b.x1) / 2),
+    eyeLine: Math.round(b.y0 + bh * 0.65),
+  };
 }
 
 /** Sensible motion points for a new part, from where it has paint. */
@@ -340,8 +247,8 @@ const FEEL: Record<Feel, { spring: string; rotate: number; squash?: { x: number;
 export function problems(doc: Doc): string[] {
   const out: string[] = [];
   if (!doc.name.trim()) out.push("Give the skin a name.");
-  if (!doc.parts.some((p) => p.role === "head")) out.push("At least one picture has to be the Head.");
-  if (doc.parts.filter((p) => p.role !== "iris").length > 16) out.push("At most 16 pictures.");
+  if (!doc.parts.length) out.push("Add at least one picture.");
+  if (doc.parts.length > 16) out.push("At most 16 pictures.");
   if (doc.persona.length > 2000) out.push("The chat personality is longer than 2000 characters.");
   return out;
 }
@@ -355,18 +262,12 @@ export interface Built {
 /** The bundle this document makes. */
 export function build(doc: Doc): Built {
   const pictures = new Map<string, HTMLCanvasElement>();
-  const r = doc.head.r;
   const layers: unknown[] = [];
-  let iris: { src: string; follow: number } | null = null;
 
   for (const part of doc.parts) {
     const file = partFile(part);
     const canvas = bake(doc, [part]);
     pictures.set(file, canvas);
-    if (part.role === "iris") {
-      iris = { src: file, follow: Math.round(r * 0.08) };
-      continue;
-    }
     let behavior: Record<string, unknown> | undefined;
     const sign = part.mirrored ? -1 : 1;
     if (part.motion === "swing") {
@@ -398,52 +299,30 @@ export function build(doc: Doc): Built {
       id: slug(part.id) || "part",
       src: file,
       role: part.role,
-      parallax: part.role === "back" ? 0.35 : 0,
+      parallax: part.role === "back" ? 0.35 : part.role === "top" ? (part.follow ? 1 : 0) : 0,
       ...(behavior ? { behavior } : {}),
     });
   }
 
-  const expressions: Record<string, string> = {};
-  for (const [mood, placed] of Object.entries(doc.expressions)) {
-    if (!placed) continue;
-    const file = `face-${mood}.png`;
-    pictures.set(file, bake(doc, [placed]));
-    expressions[mood] = file;
-  }
-
-  const round = (b: Box) => [b.x0, b.y0, b.x1, b.y1].map(Math.round);
   const manifest: Record<string, unknown> = {
-    format: 1,
+    format: FORMAT,
     id: skinId(doc),
     name: doc.name.trim().slice(0, 40),
     ...(doc.author.trim() ? { author: doc.author.trim() } : {}),
     ...(doc.note.trim() ? { note: doc.note.trim() } : {}),
     ...(doc.persona.trim() ? { persona: doc.persona.trim() } : {}),
     size: { w: doc.w, h: doc.h },
-    head: { cx: Math.round(doc.head.cx), cy: Math.round(doc.head.cy), r: Math.round(doc.head.r) },
-    chin: Math.round(doc.chin),
-    tiltPivot: [Math.round(doc.head.cx), Math.round(doc.chin)],
     layers,
-    eyes: doc.eyes.map((e, i) => ({
-      cx: Math.round((e.x0 + e.x1) / 2),
-      cy: Math.round((e.y0 + e.y1) / 2),
-      x0: Math.round(e.x0),
-      x1: Math.round(e.x1),
-      top: Math.round(e.y0),
-      bottom: Math.round(e.y1),
-      sd: i === 0 ? -1 : 1,
-    })),
-    ...(iris ? { iris } : {}),
-    lid: doc.lid,
-    lash: doc.lash,
-    cheeks: doc.cheeks.map((c) => c.map(Math.round)),
-    blush: { rx: Math.round(r * 0.13), ry: Math.round(r * 0.09), color: doc.blush },
     springs: {
       "hair-mirrored": { k: 30, c: 3.6, max: 0.32, idle: [0.035, 1.1], yaw: 2.6, tilt: 3.6, oy: -2.0, sy: -2.0 },
     },
-    ...(Object.keys(expressions).length
-      ? { expressions, cover: round(doc.cover), coverShape: doc.pixel ? "rect" : "oval" }
-      : {}),
+    ...(doc.skinColor ? { skinColor: doc.skinColor } : {}),
+    fit: {
+      width: Math.round(doc.fit.width),
+      height: Math.round(doc.fit.height),
+      centerX: Math.round(doc.fit.centerX),
+      eyeLine: Math.round(doc.fit.eyeLine),
+    },
   };
   return { manifest, pictures };
 }
@@ -451,72 +330,111 @@ export function build(doc: Doc): Built {
 // ── From an installed skin ────────────────────────────────────────────────────
 
 /** Turns an installed skin back into a document (its pictures are full-size already). */
-export function fromManifest(id: string, m: any, images: Map<string, ImageBitmap>): Doc {
+export function fromManifest(id: string, m: Manifest, author: string, note: string, images: Map<string, ImageBitmap>): Doc {
   const doc = emptyDoc();
-  const num = (v: unknown, f: number) => (typeof v === "number" && Number.isFinite(v) ? v : f);
   doc.id = id;
-  doc.name = String(m.name ?? "");
-  doc.author = String(m.author ?? "");
-  doc.note = String(m.note ?? "");
-  doc.persona = String(m.persona ?? "");
-  doc.w = num(m.size?.w, 512);
-  doc.h = num(m.size?.h, 512);
-  doc.head = { cx: num(m.head?.cx, doc.w / 2), cy: num(m.head?.cy, doc.h / 2), r: num(m.head?.r, doc.w / 3) };
-  doc.chin = num(m.chin, doc.head.cy + doc.head.r);
-  const place = (src: string): Placed | null => {
-    const img = images.get(src);
-    return img ? { img: addToPool(img), x: 0, y: 0, scale: 1 } : null;
-  };
+  doc.name = m.name;
+  doc.author = author;
+  doc.note = note;
+  doc.persona = m.persona;
+  doc.w = m.size.w;
+  doc.h = m.size.h;
+  doc.fit = { ...m.fit };
+  doc.skinColor = m.skinColor;
   let n = 0;
-  for (const l of Array.isArray(m.layers) ? m.layers : []) {
-    const placed = place(l.src);
-    if (!placed) continue;
-    const b = l.behavior ?? {};
+  for (const l of m.layers) {
+    const img = images.get(l.src);
+    if (!img) continue;
+    const b = l.behavior;
     const motion: Motion = b.type === "pivot" ? "swing" : b.type === "bend" ? "bend" : "still";
-    const feel: Feel = b.squash ? "bouncy" : b.spring === "locks" ? "subtle" : "floppy";
+    const feel: Feel = b.type === "pivot" && b.squash ? "bouncy" : "spring" in b && b.spring === "locks" ? "subtle" : "floppy";
     doc.parts.push({
-      ...placed,
-      id: String(l.id || `part-${++n}`),
-      name: String(l.id || l.src).replace(/\.png$/i, ""),
-      role: l.role === "back" || l.role === "front" ? l.role : "head",
+      img: addToPool(img),
+      x: 0,
+      y: 0,
+      scale: 1,
+      id: l.id || `part-${++n}`,
+      name: (l.id || l.src).replace(/\.png$/i, ""),
+      role: l.role,
       motion,
       feel,
-      mirrored: (typeof b.rotate === "number" && b.rotate < 0) || b.spring === "hair-mirrored",
-      pivot: Array.isArray(b.pivot) ? [b.pivot[0], b.pivot[1]] : Array.isArray(b.root) ? [b.root[0], b.root[1]] : [doc.head.cx, doc.head.cy],
-      tipY: num(b.tipY, doc.h),
+      follow: l.role !== "top" || l.parallax >= 0.5,
+      mirrored: (b.type === "pivot" && b.rotate < 0) || ("spring" in b && b.spring === "hair-mirrored"),
+      pivot: b.type === "pivot" ? [b.pivot[0], b.pivot[1]] : b.type === "bend" ? [b.root[0], b.root[1]] : [doc.fit.centerX, doc.fit.eyeLine],
+      tipY: b.type === "bend" ? b.tipY : doc.h,
     });
   }
-  if (m.iris?.src) {
-    const placed = place(m.iris.src);
-    if (placed) {
-      doc.parts.push({ ...placed, id: "iris", name: "irises", role: "iris", motion: "still", feel: "floppy", mirrored: false, pivot: [0, 0], tipY: 0 });
-    }
-  }
-  const eyes = Array.isArray(m.eyes) ? m.eyes : [];
-  if (eyes.length) {
-    const box = (e: any): Box => ({ x0: num(e.x0, 0), y0: num(e.top, 0), x1: num(e.x1, 0), y1: num(e.bottom, 0) });
-    doc.eyes = [box(eyes[0]), box(eyes[1] ?? eyes[0])];
-  }
-  if (Array.isArray(m.cheeks) && m.cheeks.length) {
-    const c = m.cheeks;
-    doc.cheeks = [[num(c[0]?.[0], 0), num(c[0]?.[1], 0)], [num(c[1]?.[0] ?? c[0]?.[0], 0), num(c[1]?.[1] ?? c[0]?.[1], 0)]];
-  }
-  if (Array.isArray(m.cover) && m.cover.length === 4) {
-    doc.cover = { x0: num(m.cover[0], 0), y0: num(m.cover[1], 0), x1: num(m.cover[2], 0), y1: num(m.cover[3], 0) };
-  }
-  const hex = (v: unknown, f: string) => {
-    if (typeof v !== "string") return f;
-    const rgb = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(v);
-    if (rgb) return `#${rgb.slice(1, 4).map((x) => Number(x).toString(16).padStart(2, "0")).join("")}`;
-    return /^#[0-9a-f]{6}$/i.test(v) ? v : f;
+  return doc;
+}
+
+// ── A starting point ──────────────────────────────────────────────────────────
+
+/**
+ * The bundled example as a document: flat-colour hair (a back piece, a fringe
+ * with side locks, a ponytail that bends), a swinging bow and glasses that
+ * follow Mochi's eyes. The same skin as docs/examples/skin-example, drawn here
+ * so a new skin can start from something that already works.
+ */
+export async function exampleDoc(): Promise<Doc> {
+  const doc = emptyDoc();
+  doc.name = "Example";
+  doc.w = 256;
+  doc.h = 256;
+  doc.fit = { width: 68, height: 89, centerX: 128, eyeLine: 154 };
+  const HAIR = "#a85a46";
+  const DARK = "#8a4638";
+  const ellipse = (g: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number) => {
+    g.beginPath();
+    g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
   };
-  doc.lid = hex(m.lid, doc.lid);
-  doc.lidAuto = false;
-  doc.lash = hex(m.lash, doc.lash);
-  doc.blush = hex(m.blush?.color, doc.blush);
-  for (const [mood, src] of Object.entries((m.expressions ?? {}) as Record<string, string>)) {
-    const placed = place(src);
-    if (placed && MOODS.some(([k]) => k === mood)) doc.expressions[mood as Mood] = placed;
-  }
+  const picture = async (paint: (g: CanvasRenderingContext2D) => void) => {
+    const c = document.createElement("canvas");
+    c.width = doc.w;
+    c.height = doc.h;
+    paint(c.getContext("2d")!);
+    return createImageBitmap(c);
+  };
+  const part = (id: string, img: ImageBitmap, role: PartRole, motion: Motion, feel: Feel, pivot: Pt, tipY: number): Part => ({
+    img: addToPool(img), x: 0, y: 0, scale: 1, id, name: id, role, motion, feel, mirrored: false, follow: true, pivot, tipY,
+  });
+  const none: Pt = [0, 0];
+  doc.parts.push(
+    part("tail", await picture((g) => { g.fillStyle = DARK; ellipse(g, 214, 150, 22, 70); g.fill(); }), "back", "bend", "floppy", [206, 100], 222),
+    part("back", await picture((g) => { g.fillStyle = DARK; ellipse(g, 128, 125, 108, 98); g.fill(); }), "back", "still", "floppy", none, 0),
+    part("fringe", await picture((g) => {
+      g.save();
+      ellipse(g, 128, 125, 104, 94);
+      g.clip();
+      g.fillStyle = HAIR;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.lineTo(256, 0);
+      for (let x = 256; x >= 0; x -= 2) g.lineTo(x, 112 + 9 * Math.sin(x / 9));
+      g.closePath();
+      g.fill();
+      g.fillRect(0, 0, 46, 175);
+      g.fillRect(210, 0, 46, 175);
+      g.restore();
+    }), "front", "still", "floppy", none, 0),
+    part("bow", await picture((g) => {
+      g.fillStyle = "#ffffff";
+      for (const [cx, rx, ry] of [[172, 16, 11], [202, 16, 11], [187, 6, 7]]) {
+        ellipse(g, cx, 40, rx, ry);
+        g.fill();
+      }
+    }), "front", "swing", "bouncy", [187, 40], 0),
+    part("glasses", await picture((g) => {
+      g.strokeStyle = "#2a2a30";
+      g.lineWidth = 3;
+      for (const cx of [100, 156]) {
+        ellipse(g, cx, 154, 16, 20);
+        g.stroke();
+      }
+      g.beginPath();
+      g.moveTo(116, 150);
+      g.lineTo(140, 150);
+      g.stroke();
+    }), "top", "still", "floppy", none, 0),
+  );
   return doc;
 }

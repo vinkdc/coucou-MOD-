@@ -3,7 +3,8 @@
 // gaze following your pointer. Runs only while the editor window is visible.
 
 import { BotEngine } from "../mochi/engine";
-import { RigSkin, parseManifest } from "../mochi/rig";
+import { HairSkin } from "../mochi/hair";
+import { parseManifest } from "../mochi/manifest";
 import type { BotEmoteName, BotStateName } from "../core/layout";
 import type { Built } from "./doc";
 
@@ -72,7 +73,7 @@ export class Preview {
     const n = ++this.build;
     if (!built) {
       this.engine.skin = null;
-      this.status.textContent = "Add a picture to see your skin here.";
+      this.status.textContent = "Add a picture to see your skin on Mochi here.";
       return;
     }
     const m = parseManifest(built.manifest);
@@ -86,7 +87,7 @@ export class Preview {
       for (const img of images.values()) img.close();
       return;
     }
-    const skin = new RigSkin(m, images);
+    const skin = new HairSkin(m, images);
     await skin.ready;
     if (n !== this.build) return;
     this.engine.skin = skin;

@@ -1,8 +1,10 @@
 # Skin bundles
 
-A skin bundle changes how Mochi looks without touching the app: **Settings → Character → Import skin…** (a `.zip`) or **Folder…**. It is kept in `%LOCALAPPDATA%\Coucou\skins\<id>\` and listed in the Character menu; **Remove** deletes it. This is for Windows and Linux (`windows/`).
+A skin bundle gives Mochi a new hairstyle without touching the app: **Settings → Character → Import skin…** (a `.zip`) or **Folder…**. It is kept in `%LOCALAPPDATA%\Kotoba\skins\<id>\` and listed in the Character menu; **Remove** deletes it. This is for Windows and Linux (`windows/`).
 
-A bundle is **data only**: one `manifest.json` and some PNG pictures. It can't run code, and Coucou checks all of it before keeping anything (see the limits below). Before an import is kept, Settings shows its name, author, note and chat persona.
+**Mochi keeps its own body, eyes, blinks and every mood.** A skin is only what goes on top: hair behind the head, a fringe and side locks over it, a bow. Every skin is therefore built the same way, and every mood and animation Mochi has carries into the hair (it sways with head turns, swings on hops, bends when Mochi tilts).
+
+A bundle is **data only**: one `manifest.json` and some PNG pictures. It can't run code, and Kotoba checks all of it before keeping anything (see the limits below). Before an import is kept, Settings shows its name, author, note and chat persona.
 
 Art you didn't make is your responsibility: only import pictures you have the right to use. Bundles are never part of the app, the installer or the repo.
 
@@ -10,10 +12,10 @@ Art you didn't make is your responsibility: only import pictures you have the ri
 
 **Settings → Character → Create…** opens the skin editor; **Edit…** opens the selected imported skin in it. No file needs to be written by hand:
 
-1. **Pictures.** Drop a picture of your character (PNG with transparency is best; a plain white or single-colour background is removed automatically, and **Restore original** brings it back). One picture is enough. Add more for parts that should move on their own — hair, a tail, arms, a bow — drawn on the same canvas, or drag and resize them into place.
-2. **Each picture:** what it is (*Head*, *Behind the head*, *In front*, or *Irises*, which follow the pointer) and how it moves (*Still*, *Swings* from a point, or *Bends like hair*), with a feel (*Floppy*, *Bouncy*, *Subtle*). Drag the orange dots to set where it swings or bends from.
-3. **Face.** Drag the head circle, the eyes (where it blinks), the chin (where it squashes and tilts from) and the cheeks onto your picture. *Pick from picture* takes the skin colour for the eyelids.
-4. **Expressions** (optional). Drop a drawn face on a mood — happy, asleep, dizzy, in love… The purple face area is painted over first, then the face goes on. Moods without a picture use Mochi's eyes.
+1. **Pictures.** Drop the hair of your character (PNG with transparency is best; a plain white or single-colour background is removed automatically, and **Restore original** brings it back). One picture is enough. Add more for parts that should move on their own — a fringe, side locks, a ponytail, a bow — drawn on the same canvas, or drag and resize them into place.
+2. **Each picture:** where it goes — *Behind Mochi*, *Over the head* (over the head but under the eyes) or *Over the eyes* (glasses, a mask; it can follow the eyes as Mochi looks around) — and how it moves (*Still*, *Swings* from a point — a bow —, or *Bends like hair*), with a feel (*Floppy*, *Bouncy*, *Subtle*). Drag the orange dots to set where it swings or bends from. **From example** (next to New) starts from the bundled flat-colour skin instead of an empty page.
+3. **Fit on Mochi.** A blue Mochi outline with its eyes is drawn over your pictures. Drag it (ring), widen it (dot) and heighten it (square) until its eyes sit where your character's face goes and the hair covers the top of the head. The numbers are also editable; a smaller width or height makes the hair bigger on Mochi. The first picture gets a good first guess.
+4. **Colours.** The skin colour of Mochi's body while this skin is worn: a few swatches (Mochi grey, skin tones, pink, mint, lavender, sky) or any colour. The preview follows as you pick.
 5. **About.** Author, a note, and how it talks in the chat.
 
 The **live preview** is the real character engine wearing your skin: it follows your pointer, and the mood buttons play every state. **Save and use** installs it and puts it on the island; **Export .zip…** writes a file anyone can import. Undo and redo: Ctrl+Z, Ctrl+Y.
@@ -25,14 +27,14 @@ cd windows
 node scripts/make-example-skin.mjs        # writes docs/examples/skin-example/
 ```
 
-Then Import skin… → Folder… → pick `docs/examples/skin-example`.
+Then Import skin… → Folder… → pick `docs/examples/skin-example`: flat-colour hair, a bending ponytail and a swinging bow, the smallest skin that moves like a real one.
 
 ## Layout of a bundle
 
 ```
 my-skin.zip   (or a folder; a zip may have one top-level folder)
   manifest.json
-  head.png  tail.png  bow.png  iris.png …
+  back.png  fringe.png  tail.png  glasses.png  bow.png …
 ```
 
 Every picture has the **same size** (`size`), drawn in the same coordinates, so a layer is just the artwork of one part on a transparent background. Nothing is cut at runtime.
@@ -41,46 +43,28 @@ Every picture has the **same size** (`size`), drawn in the same coordinates, so 
 
 ```jsonc
 {
-  "format": 1,
+  "format": 2,                  // older bundles (format 1) drew a whole figure; make them again in the editor
   "id": "my-skin",              // a-z, 0-9, "-", max 32. Not "mochi" or "ribbon". Same id = update.
   "name": "My skin",            // max 40
   "author": "Me",               // optional
   "note": "Shown on import",    // optional
   "persona": "How it talks in chat",   // optional, max 2000 characters
 
-  "size": { "w": 1306, "h": 1844 },    // pixels of every picture (max 4096 each way)
-  "head": { "cx": 552, "cy": 672, "r": 486 },  // head circle; Mochi's size is matched to it
-  "crop": { "x": 60, "y": 60, "w": 1190, "h": 1440 },  // optional: the part of the picture that is drawn
-  "chin": 1156,                         // squash and tilt base (y)
-  "tiltPivot": [552, 1160],
+  "size": { "w": 512, "h": 512 },      // pixels of every picture (max 4096 each way)
+  "crop": { "x": 0, "y": 0, "w": 512, "h": 512 },  // optional: the part of the picture that is drawn
 
-  "layers": [                           // drawn in this order; at least one "head"
+  "layers": [                           // drawn in this order; 1 to 16 pictures
     { "id": "tail", "src": "tail.png", "role": "back",
-      "behavior": { "type": "bend", "root": [1030, 480], "tipY": 1490,
-                    "bounds": [780, 380, 1250, 1500], "grid": [4, 8], "spring": "hair" } },
-    { "id": "bow", "src": "bow.png", "role": "back", "parallax": 0.35,
-      "behavior": { "type": "pivot", "pivot": [940, 350], "spring": "hair", "rotate": 0.15,
-                    "squash": { "x": 0.18, "y": 0.14 }, "squashSpring": "bow" } },
-    { "id": "head", "src": "head.png", "role": "head" },
-    { "id": "lock", "src": "lock.png", "role": "front",
-      "behavior": { "type": "pivot", "pivot": [255, 1005], "spring": "locks" } }
+      "behavior": { "type": "bend", "root": [410, 120], "tipY": 470,
+                    "bounds": [330, 60, 500, 500], "grid": [4, 8], "spring": "hair" } },
+    { "id": "back", "src": "back.png", "role": "back", "parallax": 0.35 },
+    { "id": "fringe", "src": "fringe.png", "role": "front" },
+    { "id": "bow", "src": "bow.png", "role": "front",
+      "behavior": { "type": "pivot", "pivot": [257, 89], "spring": "bow", "rotate": 0.5 } }
   ],
 
-  "eyes": [                             // up to 2: where the eyelid and expression eyes go
-    { "cx": 340, "cy": 900, "x0": 282, "x1": 400, "top": 848, "bottom": 966, "sd": -1 },
-    { "cx": 714, "cy": 890, "x0": 656, "x1": 772, "top": 838, "bottom": 958, "sd": 1 }
-  ],
-  "iris": { "src": "iris.png", "follow": 30 },   // optional: irises slide to follow the cursor
-  "lid": "rgb(255, 246, 224)",          // skin colour the eyelid is painted with
-  "lash": "rgb(35, 22, 26)",
-  "cheeks": [[350, 1030], [705, 1020]],
-  "blush": { "rx": 50, "ry": 34, "color": "rgb(255, 140, 155)" },
-
-  "expressions": {                      // optional: a drawn face per mood (Mochi's eye names)
-    "happy": "face-happy.png", "closed": "face-closed.png", "spiral": "face-spiral.png"
-  },
-  "cover": [300, 820, 800, 1060],       // the face area painted with "lid" before an expression goes on
-  "coverShape": "oval",                 // "rect" (pixel art) or "oval" (soft edge, painted art)
+  "fit": { "width": 150, "height": 200, "centerX": 256, "eyeLine": 324 },
+  "skinColor": "#efbf9a",       // optional: Mochi's body colour while worn; leave out for Mochi's grey
 
   "springs": {                          // optional overrides; the defaults are hair, bow, locks
     "hair": { "k": 30, "c": 3.6, "max": 0.32, "idle": [0.035, 1.1], "yaw": -2.6, "tilt": -3.6, "oy": 2.0, "sy": 2.0 }
@@ -88,13 +72,13 @@ Every picture has the **same size** (`size`), drawn in the same coordinates, so 
 }
 ```
 
-**Roles.** `head` layers turn and nod with the character and carry the face (irises, eyelids, blush are drawn on the last one). `back` layers sit behind it and slide the other way when it turns (`parallax`). `front` layers turn with the head and are drawn over it.
+**Roles.** `back` layers sit behind Mochi's body. `front` layers are drawn over the body but under Mochi's eyes, so a fringe never covers them. `top` layers are drawn over the eyes as well (glasses, a mask); their `parallax` says how closely they follow the eyes as Mochi looks around (1, the default, slides with them; 0 stays put). A `front` layer with a `pivot` behavior (a bow) is also drawn on top, in layer order.
 
-**Behaviors.** `bend` warps a layer on a grid so its tip whips while the root stays put (ponytails). `pivot` swings a layer about a point and can squash on hops (bows, side locks). No behavior: the layer just follows its role.
+**Fit.** Mochi's head is squat and wide, so the pictures are placed on it by four numbers. `width` and `height` are picture pixels per Mochi radius, across and down: the smaller they are, the bigger the hair is on Mochi (height may be smaller than width to squat the hair onto the head). `centerX` is the picture x of the middle of the face and `eyeLine` the picture y of the eyes: that point lands on Mochi's eyes. Good starting values for hair drawn around a head: `width` ≈ the hair's width ÷ 3.2, `height` ≈ its height ÷ 2.2, `eyeLine` about 65 % of the way down. The editor shows Mochi's outline so you can set them by eye.
 
-**Springs.** A spring is a damped pendulum pushed by the head turn (`yaw`), tilt, hops (`oy`) and squash (`sy`). `max` is the furthest it swings, `idle` a gentle sway `[amplitude, frequency]`.
+**Behaviors.** `bend` warps a layer on a grid so its tip whips while the root stays put (ponytails, side locks). `pivot` swings a layer about a point and can squash on hops (bows). No behavior: the layer just follows its role.
 
-**Expressions.** Every state Mochi has (happy, love, sleeping, thinking…) still works. The engine names an eye shape for each one — `pill` (open), `wide`, `flat`, `happy`, `closed`, `spiral`, `heart`, `star`, `tired`, `wink`, `line`, `dot` — and a skin can give a picture for any of them in `expressions`. A blink shows `closed` when there is one. Shapes without a picture are drawn as Mochi's eye, in `lash` colour, over your eyes.
+**Springs.** A spring is a damped pendulum pushed by the head turn (`yaw`), tilt, hops (`oy`) and squash (`sy`). `max` is the furthest it swings, `idle` a gentle sway `[amplitude, frequency]`. The hair itself barely slides when Mochi looks around (the body never moves, only its eyes do), so it keeps covering the head.
 
 ## Limits
 

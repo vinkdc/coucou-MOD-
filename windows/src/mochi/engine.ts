@@ -7,7 +7,7 @@
 import { Ease, lerp, type EaseFn } from "../core/anim";
 import { Sound } from "../core/sound";
 import type { BotEmoteName, BotStateName } from "../core/layout";
-import type { FullSkin, RibbonSkin } from "./skin";
+import type { DecorSkin } from "./skin";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -61,6 +61,15 @@ interface Particle {
 
 // ── Constants (MochiConst / PISTES.mochi) ─────────────────────────────────────
 
+/** How much bigger Mochi gets at the loudest part of its voice (0.09 = 9 %). */
+const SPEAK_GROW = 0.09;
+
+/** A stand-in for loudness: word-sized bursts, stronger and weaker over a phrase. */
+const syllables = (t: number): number => {
+  const beat = Math.abs(Math.sin(t * Math.PI * 3.8));
+  const phrase = 0.55 + 0.45 * Math.sin(t * 1.7 + Math.sin(t * 0.6) * 2);
+  return beat * Math.max(0.25, phrase);
+};
 const EYE_W = 0.25;
 const EYE_H = 0.27;
 const EYE_SP = 0.37;
@@ -172,21 +181,39 @@ export class BotEngine {
   isMini = false;
   /** Solid body colour for mini bots / integration pills (null = Mochi gradient). */
   bodyColor: RGB | null = null;
-  /** Optional look (Settings → Character). Only the main Mochi wears it. */
-  skin: RibbonSkin | FullSkin | null = null;
+  /** The main Mochi's own body colours, top and bottom; null = Mochi's grey. */
+  private tone: readonly [RGB, RGB] | null = null;
+  private worn: DecorSkin | null = null;
+
+  /** Optional look (the skin editor's skins, Ribbon). Only the main Mochi wears it. */
+  get skin(): DecorSkin | null {
+    return this.worn;
+  }
+
+  set skin(skin: DecorSkin | null) {
+    this.worn = skin;
+    // A skin may carry its own skin colour ("#rrggbb"); without one Mochi stays grey.
+    const m = skin?.skinColor ? /^#([0-9a-f]{6})$/i.exec(skin.skinColor.trim()) : null;
+    if (!m) {
+      this.tone = null;
+      return;
+    }
+    const c = [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16) / 255) as unknown as RGB;
+    this.tone = [mix3(c, [1, 1, 1], 0.2), mix3(c, [0, 0, 0], 0.15)];
+  }
+
+  /** Body colours: the worn skin's colour on the main Mochi, Mochi's grey otherwise. */
+  private get baseTone(): readonly [RGB, RGB] {
+    return !this.isMini && this.tone ? this.tone : [BASE_TOP, BASE_BOTTOM];
+  }
 
   /**
    * The skin is worn by the main character whatever is focused — the island
    * tints Mochi for every focused task, Claude Code included, so making the
    * skin give way to a body colour meant it never showed. Mini bots stay plain.
    */
-  private get skinned(): RibbonSkin | null {
-    return this.skin && !this.isMini && !("full" in this.skin) ? this.skin : null;
-  }
-
-  /** A skin that draws the whole figure (see FullSkin). */
-  private get fullSkin(): FullSkin | null {
-    return this.skin && !this.isMini && "full" in this.skin ? this.skin : null;
+  private get skinned(): DecorSkin | null {
+    return this.skin && !this.isMini ? this.skin : null;
   }
 
   // Animated state (BotEngine `s`)
@@ -202,6 +229,16 @@ export class BotEngine {
 
   // Mouth spring (fraction of R)
   slotH = 0; slotHTarget = 0; slotHVel = 0; isChewing = false;
+  /**
+   * True while Mochi's voice plays: it pulses with the voice, swelling on each
+   * word and settling in the gaps, with a little bob and sway.
+   */
+  speaking = false;
+  /** How loud the voice is right now, 0..1; negative = unknown, so it pulses on its own. */
+  voiceLevel = -1;
+  /** The pulse: the voice's level, rising fast and falling slower. */
+  private speakS = 0;
+  private talkT = 0;
 
   col: RGB = C.idle;
   colT: RGB = C.idle;
@@ -485,6 +522,7 @@ export class BotEngine {
       Math.abs(this.tgSy - this.sy) > 0.002 ||
       Math.abs(this.tgSx - this.sx) > 0.002 ||
       Math.abs(this.tgEs - this.es) > 0.002 ||
+      this.speaking || this.speakS > 0.002 ||
       this.slotH > 0.001 || Math.abs(this.slotHVel) > 0.001 ||
       Math.abs(this.col[0] - this.colT[0]) > 0.003 ||
       Math.abs(this.col[1] - this.colT[1]) > 0.003 ||
@@ -562,6 +600,11 @@ export class BotEngine {
 
     const bounce = this.cfg.bounces ? -Math.abs(Math.sin(t * 5.2)) * 0.07 : 0;
     const kGen = 1 - Math.pow(0.0008, dt);
+    // The talking pulse follows the voice's loudness; without a reading it beats like syllables.
+    this.talkT += dt;
+    const loud = this.voiceLevel >= 0 ? this.voiceLevel : syllables(this.talkT);
+    const want = this.speaking ? loud : 0;
+    this.speakS += (want - this.speakS) * (1 - Math.pow(want > this.speakS ? 0.000001 : 0.0001, dt));
     if (!this.locks.has("oy")) this.oy += (bounce - this.oy) * kGen;
 
     if (this.cfg.breathes) {
@@ -666,35 +709,18 @@ export class BotEngine {
    * `w`×`h` CSS pixels (the caller has already applied the DPR transform).
    */
   draw(x: CanvasRenderingContext2D, W: number, H: number) {
-    const R = W * 0.3;
+    const R = W * 0.3 * (1 + SPEAK_GROW * this.speakS);
     const rx = R * 1.14;
     const ry = R * 0.88;
     const cx = W / 2 + this.ox * R;
-    const cy = H / 2 + this.particleOverhang / 2 + this.oy * R + R * 0.06;
-
-    // A full-figure skin draws the character itself — except while the body
-    // morphs into the drop zone's mouth, which only Mochi's shape can do.
-    const full = this.fullSkin;
-    if (full && this.morph < 0.3) {
-      full.draw(
-        x,
-        {
-          cx, cy, R, sx: this.sx, sy: this.sy, tilt: this.tilt, yaw: this.yaw, pitch: this.pitch,
-          open: this.open, eye: this.eyeOverride ?? this.cfg.eye,
-          blush: Math.max(this.blush, this.tint * 0.5),
-        },
-        (c, shape, w, h, sd, ink) => this.drawEyeShape(c, shape, w, h, sd, ink),
-      );
-      if (this.badge && this.badgeS > 0.01) this.drawBadge(x, this.badge, R, cx, cy);
-      this.drawParticles(x, R, cx, cy);
-      return;
-    }
+    const cy = H / 2 + this.particleOverhang / 2 + this.oy * R + R * 0.06 - this.speakS * R * 0.035;
 
     this.drawHandsBehind(x, R, rx, ry, cx, cy);
 
     x.save();
     x.translate(cx, cy);
-    if (this.tilt !== 0) x.rotate(this.tilt);
+    const sway = Math.sin(this.talkT * 4.3) * 0.03 * this.speakS;
+    if (this.tilt !== 0 || sway !== 0) x.rotate(this.tilt + sway);
     x.scale(this.sx, this.sy);
 
     const body = this.bodyPath(rx, ry, R);
@@ -781,17 +807,18 @@ export class BotEngine {
     const skin = this.skinned;
     // A skinned face keeps its own colours; anything else with a body colour
     // (mini bots, a focused integration) is a flat solid fill.
-    if (this.bodyColor && !(skin && this.morph < 0.5)) {
+    const repainted = skin?.faceFill && this.morph < 0.5 ? skin : null;
+    if (this.bodyColor && !repainted) {
       x.fillStyle = rgba(this.bodyColor, 1);
       x.fill(body);
       return;
     }
-    if (skin && this.morph < 0.5) {
-      x.fillStyle = skin.faceFill(x, ry);
+    if (repainted) {
+      x.fillStyle = repainted.faceFill!(x, ry);
     } else {
       const g = x.createLinearGradient(rx * 0.7, -ry * 0.85, -rx * 0.8, ry * 0.9);
-      g.addColorStop(0, rgba(BASE_TOP));
-      g.addColorStop(1, rgba(BASE_BOTTOM));
+      g.addColorStop(0, rgba(this.baseTone[0]));
+      g.addColorStop(1, rgba(this.baseTone[1]));
       x.fillStyle = g;
     }
     x.fill(body);
@@ -844,7 +871,7 @@ export class BotEngine {
       const fx = lerp(Math.max(0.18, Math.cos(eyeYaw)), 1, this.morph * 0.7);
       const fy = lerp(Math.max(0.18, cp), 1, this.morph * 0.7);
       // The Ribbon look has big anime eyes; Mochi keeps its own.
-      const eyeMult = this.isMini ? 1.9 : this.skinned && this.morph < 0.5 ? 1.4 : 1.0;
+      const eyeMult = this.isMini ? 1.9 : this.skinned && this.morph < 0.5 ? this.skinned.eyeScale ?? 1 : 1.0;
       const ew = R * EYE_W * this.es * eyeMult;
       const eh = R * EYE_H * this.es * eyeMult;
 
@@ -853,16 +880,18 @@ export class BotEngine {
       x.scale(fx, fy);
       const skin = this.skinned;
       const open = shape === "pill" || shape === "wide";
-      if (skin && open && this.morph < 0.5) {
+      // A look that repaints the eyes (Ribbon); the others keep Mochi's own.
+      const painted = skin?.eyeTop && skin.eyeBottom && open && this.morph < 0.5 ? skin : null;
+      if (painted) {
         // Green eyes, dark at the lid, bright below, like the figure's.
         const g = x.createLinearGradient(0, -eh / 2, 0, eh / 2);
-        g.addColorStop(0, skin.eyeTop);
-        g.addColorStop(1, skin.eyeBottom);
+        g.addColorStop(0, painted.eyeTop!);
+        g.addColorStop(1, painted.eyeBottom!);
         x.fillStyle = g;
       }
       this.drawEyeShape(x, shape, ew, eh, sd, ink);
       // A sparkle, gone while the eye is half shut so a blink reads cleanly.
-      if (skin && open && this.morph < 0.5 && this.open > 0.6) {
+      if (painted && this.open > 0.6) {
         x.fillStyle = "rgba(255,255,255,0.9)";
         x.beginPath();
         x.arc(-ew * 0.16, -eh * 0.2, ew * 0.17, 0, Math.PI * 2);
@@ -1082,8 +1111,8 @@ export class BotEngine {
         g.addColorStop(0, rgba(mix3(this.bodyColor, [1, 1, 1], 0.35)));
         g.addColorStop(1, rgba(this.bodyColor));
       } else {
-        g.addColorStop(0, rgba(BASE_TOP));
-        g.addColorStop(1, rgba(BASE_BOTTOM));
+        g.addColorStop(0, rgba(this.baseTone[0]));
+        g.addColorStop(1, rgba(this.baseTone[1]));
       }
       x.beginPath();
       x.ellipse(0, 0, hew, heh, 0, 0, Math.PI * 2);

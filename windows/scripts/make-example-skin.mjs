@@ -1,6 +1,9 @@
-// Writes the example skin bundle used by docs/SKINS.md: a flat-colour round
-// head, a swinging tail, a bow and eyes with irises. No dependencies — the PNGs
-// are encoded here. Usage: node scripts/make-example-skin.mjs [out-folder]
+// Writes the example skin bundle used by docs/SKINS.md: flat-colour hair (a back
+// piece, a fringe with side locks, a ponytail that bends), a swinging bow and
+// glasses over the eyes.
+// Mochi keeps its own body and eyes; the bundle is only what goes on top. No
+// dependencies — the PNGs are encoded here.
+// Usage: node scripts/make-example-skin.mjs [out-folder]
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
@@ -50,50 +53,53 @@ function png(paint) {
 }
 
 const inEllipse = (x, y, cx, cy, rx, ry) => ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1;
-const HEAD = { cx: 128, cy: 130, r: 88 };
-const EYES = [{ cx: 98, cy: 135 }, { cx: 158, cy: 135 }];
-const SKIN = [255, 226, 205, 255];
 const HAIR = [168, 90, 70, 255];
+const HAIR_DARK = [138, 70, 56, 255];
+const BOW = [255, 255, 255, 255];
+const FRAME = [42, 42, 48, 255];
+
+// The hair as a drawn head would wear it: round, wider than Mochi, with a
+// fringe that ends about where the eyes go.
+const HEAD = { cx: 128, cy: 125, rx: 104, ry: 94 };
 
 const layers = {
-  "tail.png": (x, y) => (inEllipse(x, y, 215, 150, 24, 80) ? HAIR : null),
-  "head.png": (x, y) => {
-    if (!inEllipse(x, y, HEAD.cx, HEAD.cy, HEAD.r, HEAD.r)) return null;
-    if (EYES.some((e) => inEllipse(x, y, e.cx, e.cy, 19, 23))) return [255, 255, 255, 255];
-    return y < 95 ? HAIR : SKIN;
+  "back.png": (x, y) => (inEllipse(x, y, 128, 125, 108, 98) ? HAIR_DARK : null),
+  "tail.png": (x, y) => (inEllipse(x, y, 214, 150, 22, 70) ? HAIR_DARK : null),
+  "fringe.png": (x, y) => {
+    if (!inEllipse(x, y, HEAD.cx, HEAD.cy, HEAD.rx, HEAD.ry)) return null;
+    const fringe = y < 112 + 9 * Math.sin(x / 9);
+    const locks = (x < 46 || x > 210) && y < 175;
+    return fringe || locks ? HAIR : null;
   },
-  "iris.png": (x, y) => (EYES.some((e) => inEllipse(x, y, e.cx, e.cy, 11, 14)) ? [70, 150, 80, 255] : null),
+  "glasses.png": (x, y) => {
+    const ring = [100, 156].some((cx) => inEllipse(x, y, cx, 154, 16, 20) && !inEllipse(x, y, cx, 154, 13, 17));
+    const bridge = x >= 116 && x <= 140 && y >= 148 && y <= 151;
+    return ring || bridge ? FRAME : null;
+  },
   "bow.png": (x, y) =>
-    inEllipse(x, y, 178, 52, 16, 11) || inEllipse(x, y, 208, 52, 16, 11) || inEllipse(x, y, 193, 52, 6, 7)
-      ? [255, 255, 255, 255]
-      : null,
+    inEllipse(x, y, 172, 40, 16, 11) || inEllipse(x, y, 202, 40, 16, 11) || inEllipse(x, y, 187, 40, 6, 7) ? BOW : null,
 };
 
 mkdirSync(out, { recursive: true });
 for (const [name, paint] of Object.entries(layers)) writeFileSync(join(out, name), png(paint));
 
 const manifest = {
-  format: 1,
+  format: 2,
   id: "example",
   name: "Example",
-  author: "Coucou",
-  note: "A flat-colour demo skin: the smallest thing that moves like a real one.",
+  author: "Kotoba",
+  note: "Flat-colour hair on Mochi: the smallest skin that moves like a real one.",
   persona: "You are a cheerful little round character who answers briefly and warmly.",
   size: { w: W, h: H },
-  head: HEAD,
-  chin: 205,
-  tiltPivot: [128, 205],
   layers: [
-    { id: "tail", src: "tail.png", role: "back", behavior: { type: "bend", root: [210, 90], tipY: 232, bounds: [180, 60, 250, 240], grid: [3, 6], spring: "hair" } },
-    { id: "head", src: "head.png", role: "head" },
-    { id: "bow", src: "bow.png", role: "front", behavior: { type: "pivot", pivot: [193, 52], spring: "hair", rotate: 0.3, squash: { x: 0.18, y: 0.14 }, squashSpring: "bow" } },
+    { id: "tail", src: "tail.png", role: "back", behavior: { type: "bend", root: [206, 100], tipY: 222, bounds: [180, 70, 250, 230], grid: [3, 6], spring: "hair" } },
+    { id: "back", src: "back.png", role: "back", parallax: 0.35 },
+    { id: "fringe", src: "fringe.png", role: "front" },
+    { id: "glasses", src: "glasses.png", role: "top", parallax: 1 },
+    { id: "bow", src: "bow.png", role: "front", behavior: { type: "pivot", pivot: [187, 40], spring: "hair", rotate: 0.3, squash: { x: 0.18, y: 0.14 }, squashSpring: "bow" } },
   ],
-  eyes: EYES.map((e, i) => ({ ...e, x0: e.cx - 19, x1: e.cx + 19, top: e.cy - 23, bottom: e.cy + 23, sd: i ? 1 : -1 })),
-  iris: { src: "iris.png", follow: 14 },
-  lid: "rgb(255, 226, 205)",
-  lash: "rgb(60, 36, 40)",
-  cheeks: [[78, 170], [178, 170]],
-  blush: { rx: 22, ry: 14, color: "rgb(255, 140, 155)" },
+  // Picture px per Mochi radius (across, down), the face's middle x and the eye line y.
+  fit: { width: 68, height: 89, centerX: 128, eyeLine: 154 },
 };
 writeFileSync(join(out, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
 console.log(`Wrote the example skin to ${out}`);

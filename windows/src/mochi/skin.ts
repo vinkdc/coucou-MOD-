@@ -9,44 +9,26 @@
 //   • the bow squashes and springs back on hops and squishes;
 //   • the bangs lag a beat behind quick head turns.
 
-import type { EyeShape } from "./engine";
-
 export type SkinName = "mochi" | "ribbon";
 
-/** Everything a full-figure skin needs from the engine for one frame. */
-export interface FullPose {
-  /** Head centre and unit size, in canvas pixels. */
-  cx: number;
-  cy: number;
-  R: number;
-  sx: number;
-  sy: number;
-  tilt: number;
-  yaw: number;
-  pitch: number;
-  /** Eyelid, 0 = shut … 1 = open (blinks). */
-  open: number;
-  /** Mochi's eye for this state/emote; open eyes are "pill" or "wide". */
-  eye: EyeShape;
-  blush: number;
-}
-
-/** Draws one of Mochi's expression eyes (happy arc, heart, spiral…). */
-export type DrawEye = (
-  x: CanvasRenderingContext2D, shape: EyeShape, w: number, h: number, sd: number, ink: string,
-) => void;
-
 /**
- * A skin that replaces Mochi's whole figure rather than decorating it. It still
- * gets the engine's motion and expressions every frame; badges and particles
- * are drawn by the engine on top.
+ * A look worn on Mochi's own body and eyes: hair behind and over the head, a
+ * bow on top. The members marked optional repaint the face (Ribbon's skin tone
+ * and green eyes); a look that leaves them out keeps Mochi's face as it is.
  */
-export interface FullSkin {
-  readonly full: true;
-  /** Resolves once the skin can draw (e.g. its artwork has loaded). */
-  readonly ready?: Promise<void>;
+export interface DecorSkin {
+  readonly blushFloor: number;
+  readonly eyeTop?: string;
+  readonly eyeBottom?: string;
+  /** Body colour as #rrggbb; without one Mochi stays its own grey. */
+  readonly skinColor?: string;
+  /** Eye size against Mochi's own (1). */
+  readonly eyeScale?: number;
+  faceFill?(x: CanvasRenderingContext2D, ry: number): CanvasGradient;
   update(p: SkinPose, dt: number): void;
-  draw(x: CanvasRenderingContext2D, pose: FullPose, drawEye: DrawEye): void;
+  drawBehind(x: CanvasRenderingContext2D, R: number, rx: number, ry: number, yaw: number): void;
+  drawHair(x: CanvasRenderingContext2D, body: Path2D, R: number, rx: number, ry: number, yaw: number): void;
+  drawBow(x: CanvasRenderingContext2D, R: number, rx: number, ry: number, yaw: number): void;
 }
 
 const HAIR_TOP = "#c9715d";
@@ -81,9 +63,10 @@ export interface SkinPose {
   open: number;
 }
 
-export class RibbonSkin {
+export class RibbonSkin implements DecorSkin {
   readonly eyeTop = EYE_TOP;
   readonly eyeBottom = EYE_BOTTOM;
+  readonly eyeScale = 1.4;
   /** Always a little rosy; the engine's own blush (love, happy) adds to it. */
   readonly blushFloor = 0.32;
 

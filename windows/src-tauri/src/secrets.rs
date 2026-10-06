@@ -9,6 +9,7 @@ const SERVICE: &str = "fr.louisraille.kotoba";
 pub const KNOWN_KEYS: &[&str] = &[
     "anthropic-api-key",
     "gemini-api-key",
+    "deepseek-api-key",
     "fish-audio-api-key",
 ];
 

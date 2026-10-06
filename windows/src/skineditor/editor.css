@@ -123,6 +123,31 @@ textarea {
   line-height: 1.45;
 }
 
+/* Skin colour: round swatches; the chosen one gets a ring of its own colour. */
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+button.swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--c);
+}
+
+button.swatch:hover:not(:disabled) {
+  background: var(--c);
+  filter: brightness(1.12);
+}
+
+button.swatch.on {
+  box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--c);
+}
+
 input[type="color"] {
   width: 40px;
   height: 28px;
@@ -300,65 +325,6 @@ input[type="checkbox"] {
 .seg button.on {
   background: rgba(99, 179, 255, 0.22);
   color: #cfe6ff;
-}
-
-.moods {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-.mood {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px;
-  border-radius: var(--row-radius);
-  background: var(--well);
-  cursor: pointer;
-  font-size: 12px;
-  min-height: 44px;
-}
-
-.mood:hover {
-  background: #15171b;
-}
-
-.mood.on {
-  background: rgba(196, 139, 255, 0.16);
-}
-
-.mood .plus {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  border-radius: 4px;
-  background: var(--fill);
-  color: var(--dim);
-  font-size: 16px;
-}
-
-.mood canvas {
-  flex: 0 0 auto;
-  border-radius: 4px;
-}
-
-.mood span {
-  flex: 1 1 auto;
-  min-width: 0;
-  line-height: 1.25;
-}
-
-.mood .icon {
-  width: 20px;
-  height: 20px;
-}
-
-body.dragging .mood {
-  background: rgba(196, 139, 255, 0.1);
 }
 
 /* Canvas */

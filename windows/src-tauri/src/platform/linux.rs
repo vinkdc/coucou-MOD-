@@ -244,8 +244,52 @@ pub fn idle_ms() -> u64 {
     u64::MAX
 }
 
+/// Media keys through playerctl (Spotify and any MPRIS player) and pactl (volume).
+pub fn media_key(key: &str) -> bool {
+    let (cmd, args): (&str, &[&str]) = match key {
+        "play_pause" => ("playerctl", &["play-pause"]),
+        "next" => ("playerctl", &["next"]),
+        "previous" => ("playerctl", &["previous"]),
+        "volume_up" => ("pactl", &["set-sink-volume", "@DEFAULT_SINK@", "+5%"]),
+        "volume_down" => ("pactl", &["set-sink-volume", "@DEFAULT_SINK@", "-5%"]),
+        "mute" => ("pactl", &["set-sink-mute", "@DEFAULT_SINK@", "toggle"]),
+        _ => return false,
+    };
+    Command::new(cmd).args(args).status().map(|s| s.success()).unwrap_or(false)
+}
+
+/// A few harmless facts about this PC, one per line.
+pub fn system_summary() -> String {
+    let t = local_time();
+    let mut lines = vec![format!("Local time: {:04}-{:02}-{:02} {:02}:{:02}", t.year, t.month, t.day, t.hour, t.minute)];
+    if let Ok(os) = std::fs::read_to_string("/etc/os-release") {
+        if let Some(name) = os.lines().find_map(|l| l.strip_prefix("PRETTY_NAME=")) {
+            lines.push(format!("OS: {}", name.trim_matches('"')));
+        }
+    }
+    if let Ok(n) = std::thread::available_parallelism() {
+        lines.push(format!("CPU threads: {n}"));
+    }
+    if let Ok(mem) = std::fs::read_to_string("/proc/meminfo") {
+        let kb = |key: &str| mem.lines().find_map(|l| l.strip_prefix(key)).and_then(|v| v.split_whitespace().next()).and_then(|v| v.parse::<f64>().ok());
+        if let (Some(total), Some(avail)) = (kb("MemTotal:"), kb("MemAvailable:")) {
+            lines.push(format!("Memory: {:.1} GB free of {:.1} GB", avail / 1_048_576.0, total / 1_048_576.0));
+        }
+    }
+    if let Ok(up) = std::fs::read_to_string("/proc/uptime") {
+        if let Some(s) = up.split_whitespace().next().and_then(|v| v.parse::<f64>().ok()) {
+            let s = s as u64;
+            lines.push(format!("Uptime: {}h {}m", s / 3600, (s / 60) % 60));
+        }
+    }
+    lines.join("\n")
+}
+
 /// Wayland and X11 let a window take focus when asked; nothing extra to do.
 pub fn force_foreground(_win: &WebviewWindow) {}
+
+/// The compositor hands focus back when the layer surface drops the keyboard.
+pub fn restore_foreground(_win: &WebviewWindow) {}
 
 /// No portable "something is full screen" signal across compositors yet.
 pub fn fullscreen_active() -> bool {

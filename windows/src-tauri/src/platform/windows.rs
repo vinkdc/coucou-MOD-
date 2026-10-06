@@ -3,6 +3,7 @@
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicIsize, Ordering};
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 
@@ -367,13 +368,117 @@ pub fn force_foreground(win: &WebviewWindow) {
     let Some(hwnd) = hwnd_of(win) else { return };
     unsafe {
         let front = GetForegroundWindow();
+        // Remember who had the keyboard (YouTube, an editor…) so closing the
+        // island can hand it back; a repeated call while already in front keeps it.
+        if !front.is_invalid() && front != hwnd {
+            PREVIOUS_FOREGROUND.store(front.0 as isize, Ordering::Relaxed);
+        }
         let front_thread = if front.is_invalid() { 0 } else { GetWindowThreadProcessId(front, None) };
         let mine = GetCurrentThreadId();
         let joined = front_thread != 0 && front_thread != mine && AttachThreadInput(mine, front_thread, true).as_bool();
         let _ = BringWindowToTop(hwnd);
         let _ = SetForegroundWindow(hwnd);
+        // Some apps (Electron ones, or a window mid-IME-composition) still refuse.
+        // A synthetic key tap counts as fresh input for this process, which lifts
+        // the restriction; F24 is a key nothing listens to.
+        if GetForegroundWindow() != hwnd {
+            use ::windows::Win32::UI::Input::KeyboardAndMouse::{keybd_event, KEYEVENTF_KEYUP, VIRTUAL_KEY};
+            keybd_event(VIRTUAL_KEY(0x87).0 as u8, 0, Default::default(), 0);
+            keybd_event(VIRTUAL_KEY(0x87).0 as u8, 0, KEYEVENTF_KEYUP, 0);
+            let _ = SetForegroundWindow(hwnd);
+        }
         if joined {
             let _ = AttachThreadInput(mine, front_thread, false);
+        }
+    }
+}
+
+// ── The assistant's PC tools ─────────────────────────────────────────────────
+
+/// Presses a media key as if it were on the keyboard: whatever owns media
+/// playback (Spotify, a browser tab, the system mixer) obeys it. `key` is one of
+/// play_pause, next, previous, volume_up, volume_down, mute.
+pub fn media_key(key: &str) -> bool {
+    use ::windows::Win32::UI::Input::KeyboardAndMouse::{keybd_event, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP};
+    let vk: u8 = match key {
+        "play_pause" => 0xB3,
+        "next" => 0xB0,
+        "previous" => 0xB1,
+        "volume_up" => 0xAF,
+        "volume_down" => 0xAE,
+        "mute" => 0xAD,
+        _ => return false,
+    };
+    // SAFETY: plain keyboard input injection, no pointers involved.
+    unsafe {
+        keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY, 0);
+        keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0);
+    }
+    true
+}
+
+/// A few harmless facts about this PC, one per line: nothing identifying beyond
+/// the computer's name, no account name, no files.
+pub fn system_summary() -> String {
+    use ::windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    use ::windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+    use ::windows::Win32::System::SystemInformation::{GetTickCount64, GlobalMemoryStatusEx, MEMORYSTATUSEX};
+
+    let mut lines = Vec::new();
+    let t = local_time();
+    lines.push(format!("Local time: {:04}-{:02}-{:02} {:02}:{:02}", t.year, t.month, t.day, t.hour, t.minute));
+    let ver = no_console(Command::new("cmd").args(["/C", "ver"])).output().ok();
+    if let Some(out) = ver {
+        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !text.is_empty() {
+            lines.push(format!("OS: {text}"));
+        }
+    }
+    if let Ok(name) = std::env::var("COMPUTERNAME") {
+        lines.push(format!("Computer name: {name}"));
+    }
+    if let Ok(n) = std::thread::available_parallelism() {
+        lines.push(format!("CPU threads: {n}"));
+    }
+    let mut mem = MEMORYSTATUSEX { dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32, ..Default::default() };
+    // SAFETY: `mem` is a valid, correctly sized MEMORYSTATUSEX.
+    if unsafe { GlobalMemoryStatusEx(&mut mem) }.is_ok() {
+        let gb = |b: u64| b as f64 / 1_073_741_824.0;
+        lines.push(format!("Memory: {:.1} GB free of {:.1} GB", gb(mem.ullAvailPhys), gb(mem.ullTotalPhys)));
+    }
+    let mut free = 0u64;
+    let mut total = 0u64;
+    // SAFETY: both out-pointers are valid for the call.
+    if unsafe { GetDiskFreeSpaceExW(::windows::core::w!("C:\\"), Some(&mut free), Some(&mut total), None) }.is_ok() {
+        let gb = |b: u64| b as f64 / 1_073_741_824.0;
+        lines.push(format!("Disk C: {:.0} GB free of {:.0} GB", gb(free), gb(total)));
+    }
+    let mut power = SYSTEM_POWER_STATUS::default();
+    // SAFETY: `power` is a valid SYSTEM_POWER_STATUS.
+    if unsafe { GetSystemPowerStatus(&mut power) }.is_ok() && power.BatteryFlag != 128 {
+        let pct = if power.BatteryLifePercent == 255 { "unknown".to_string() } else { format!("{}%", power.BatteryLifePercent) };
+        lines.push(format!("Battery: {pct}, {}", if power.ACLineStatus == 1 { "plugged in" } else { "on battery" }));
+    }
+    let up = unsafe { GetTickCount64() } / 1000;
+    lines.push(format!("Uptime: {}h {}m", up / 3600, (up / 60) % 60));
+    lines.join("\n")
+}
+
+/// The window that had the keyboard before `force_foreground` took it.
+static PREVIOUS_FOREGROUND: AtomicIsize = AtomicIsize::new(0);
+
+/// Gives the keyboard back to the window the island took it from. Does nothing
+/// if the user already moved on: only acts while the island is still in front.
+pub fn restore_foreground(win: &WebviewWindow) {
+    use ::windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, IsWindow, IsWindowVisible, SetForegroundWindow};
+    let Some(hwnd) = hwnd_of(win) else { return };
+    let prev = HWND(PREVIOUS_FOREGROUND.swap(0, Ordering::Relaxed) as *mut _);
+    if prev.is_invalid() || prev == hwnd {
+        return;
+    }
+    unsafe {
+        if GetForegroundWindow() == hwnd && IsWindow(Some(prev)).as_bool() && IsWindowVisible(prev).as_bool() {
+            let _ = SetForegroundWindow(prev);
         }
     }
 }

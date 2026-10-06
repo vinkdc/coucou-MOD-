@@ -6,7 +6,6 @@ import "./settings.css";
 import { Bridge, onEvent, type SkinInfo, type Voice } from "../core/bridge";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
 import { h, clear } from "../views/dom";
-import { localSkinNames } from "../mochi/localSkins";
 import { BUNDLE_PREFIX, bundleId, listBundles } from "../mochi/bundles";
 import { KEY_ACTIONS, SCOPE_TITLES, binding, capsOf, comboFromEvent, usable } from "../core/keys";
 
@@ -35,112 +34,69 @@ function statusDot(ok: boolean): HTMLElement {
   return h("i", { class: "dot", style: `background:${ok ? "#22c55e" : "#f4505e"}` });
 }
 
-// ── Claude API section ────────────────────────────────────────────────────────
+// ── AI section ────────────────────────────────────────────────────────────────
 
-const MODELS: [string, string][] = [
+const CLAUDE_MODELS: [string, string][] = [
   ["claude-opus-5-5", "Claude Opus 5.5"],
   ["claude-sonnet-5-5", "Claude Sonnet 5.5"],
   ["claude-haiku-4-5-20251001", "Claude Haiku 4.5 (fastest)"],
 ];
 
-function apiSection(hasKey: boolean): HTMLElement {
-  const dot = statusDot(hasKey);
-  const state = h("span", { class: "hint", text: hasKey ? "Key saved in the Windows Credential Manager." : "No key yet — Mochi needs one to teach (or use Gemini)." });
-
-  const field = h("input", {
-    type: "password",
-    placeholder: hasKey ? "••••••••••••  (stored)" : "sk-ant-...",
-    style: "flex:1 1 auto;min-width:0",
-    autocomplete: "off",
-    spellcheck: "false",
-  }) as HTMLInputElement;
-
-  const saveBtn = h("button", { class: "primary", text: "Save key" });
-  const clearBtn = h("button", { class: "danger", text: "Remove" });
-  const feedback = h("div", {});
-
-  async function refresh() {
-    const present = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
-    dot.style.background = present ? "#22c55e" : "#f4505e";
-    state.textContent = present
-      ? "Key saved in the Windows Credential Manager."
-      : "No key yet — Mochi needs one to teach (or use Gemini).";
-    field.placeholder = present ? "••••••••••••  (stored)" : "sk-ant-...";
-    clearBtn.style.display = present ? "" : "none";
-  }
-
-  saveBtn.addEventListener("click", async () => {
-    const value = field.value.trim();
-    if (!value) return;
-    clear(feedback);
-    try {
-      await Bridge.secretSet("anthropic-api-key", value);
-      field.value = "";
-      feedback.append(h("div", { class: "notice ok", text: "Saved. It never touches disk." }));
-      await refresh();
-    } catch (err) {
-      feedback.append(h("div", { class: "notice err", text: `Could not save: ${String(err)}` }));
-    }
-  });
-
-  clearBtn.addEventListener("click", async () => {
-    clear(feedback);
-    try {
-      await Bridge.secretClear("anthropic-api-key");
-      feedback.append(h("div", { class: "notice ok", text: "Key removed." }));
-      await refresh();
-    } catch (err) {
-      feedback.append(h("div", { class: "notice err", text: `Could not remove: ${String(err)}` }));
-    }
-  });
-
-  const model = h("select", {}) as HTMLSelectElement;
-  for (const [id, label] of MODELS) model.append(h("option", { value: id, text: label }));
-  if (!MODELS.some(([id]) => id === settings.model)) {
-    model.append(h("option", { value: settings.model, text: settings.model }));
-  }
-  model.value = settings.model;
-  model.addEventListener("change", () => {
-    settings.model = model.value;
-    void save();
-  });
-
-  clearBtn.style.display = hasKey ? "" : "none";
-
-  return h(
-    "section",
-    {},
-    h("h2", {}, dot, h("span", { text: "Claude" })),
-    state,
-    h("div", { class: "row" }, h("label", { text: "API key" }), field, saveBtn, clearBtn),
-    h("div", { class: "row" }, h("label", { text: "Model" }), model),
-    feedback,
-  );
+interface ProviderDef {
+  id: Settings["provider"];
+  name: string;
+  keyName: string;
+  placeholder: string;
+  noKey: string;
+  /** The model setting this provider reads and writes. */
+  model: { get(): string; set(v: string): void };
+  /** Live model list from the provider; none = the fixed list above. */
+  live?: () => Promise<{ id: string; label: string }[]>;
+  /** The empty-model choice, when the provider has one. */
+  automatic?: string;
 }
 
-// ── Gemini section ────────────────────────────────────────────────────────────
+const PROVIDERS: ProviderDef[] = [
+  {
+    id: "claude",
+    name: "Claude",
+    keyName: "anthropic-api-key",
+    placeholder: "sk-ant-...",
+    noKey: "No key yet — get one at console.anthropic.com.",
+    model: { get: () => settings.model, set: (v) => (settings.model = v) },
+  },
+  {
+    id: "gemini",
+    name: "Gemini",
+    keyName: "gemini-api-key",
+    placeholder: "Paste your Gemini API key",
+    noKey: "No key yet — get one at aistudio.google.com.",
+    model: { get: () => settings.geminiModel, set: (v) => (settings.geminiModel = v) },
+    live: () => Bridge.geminiModels(),
+    automatic: "Automatic (latest Flash)",
+  },
+  {
+    id: "deepseek",
+    name: "DeepSeek",
+    keyName: "deepseek-api-key",
+    placeholder: "sk-...",
+    noKey: "No key yet — get one at platform.deepseek.com.",
+    model: { get: () => settings.deepseekModel, set: (v) => (settings.deepseekModel = v) },
+    live: () => Bridge.deepseekModels(),
+    automatic: "Automatic (Flash, cheapest)",
+  },
+];
 
-/** Which AI answers in the chat, plus the Gemini key and model. */
-function geminiSection(hasKey: boolean): HTMLElement {
+/** The key and model of one provider. */
+function providerPanel(def: ProviderDef, hasKey: boolean): HTMLElement {
   const dot = statusDot(hasKey);
   const keyText = (present: boolean) =>
-    present ? "Key saved in the Windows Credential Manager." : "No key yet — get one at aistudio.google.com.";
+    present ? "Key saved in the Windows Credential Manager." : def.noKey;
   const state = h("span", { class: "hint", text: keyText(hasKey) });
-
-  const provider = h("select", {}) as HTMLSelectElement;
-  provider.append(
-    h("option", { value: "claude", text: "Claude" }),
-    h("option", { value: "gemini", text: "Gemini" }),
-  );
-  provider.value = settings.provider;
-  provider.addEventListener("change", () => {
-    settings.provider = provider.value as Settings["provider"];
-    void save();
-  });
 
   const field = h("input", {
     type: "password",
-    placeholder: hasKey ? "••••••••••••  (stored)" : "Paste your Gemini API key",
+    placeholder: hasKey ? "••••••••••••  (stored)" : def.placeholder,
     style: "flex:1 1 auto;min-width:0",
     autocomplete: "off",
     spellcheck: "false",
@@ -149,37 +105,38 @@ function geminiSection(hasKey: boolean): HTMLElement {
   const clearBtn = h("button", { class: "danger", text: "Remove" });
   const feedback = h("div", {});
 
-  // Filled from the live model list, so it never goes stale.
   const model = h("select", {}) as HTMLSelectElement;
   async function loadModels(present: boolean) {
     clear(model);
-    model.append(h("option", { value: "", text: "Automatic (latest Flash)" }));
-    if (settings.geminiModel) {
-      model.append(h("option", { value: settings.geminiModel, text: settings.geminiModel }));
-    }
-    model.value = settings.geminiModel;
-    if (!present) return;
+    const current = def.model.get();
+    const known = new Set<string>();
+    const add = (id: string, label: string) => {
+      if (known.has(id)) return;
+      known.add(id);
+      model.append(h("option", { value: id, text: label }));
+    };
+    if (def.automatic) add("", def.automatic);
+    if (!def.live) CLAUDE_MODELS.forEach(([id, label]) => add(id, label));
+    if (current) add(current, current);
+    model.value = current;
+    if (!def.live || !present) return;
     try {
-      const list = await Bridge.geminiModels();
-      for (const m of list) {
-        if (m.id === settings.geminiModel) continue;
-        model.append(h("option", { value: m.id, text: `${m.label} (${m.id})` }));
-      }
-      model.value = settings.geminiModel;
+      for (const m of await def.live()) add(m.id, m.label === m.id ? m.id : `${m.label} (${m.id})`);
+      model.value = current;
     } catch (err) {
       feedback.append(h("div", { class: "notice err", text: `Could not list models: ${String(err)}` }));
     }
   }
   model.addEventListener("change", () => {
-    settings.geminiModel = model.value;
+    def.model.set(model.value);
     void save();
   });
 
   async function refresh() {
-    const present = (await Bridge.secretPresent("gemini-api-key")) ?? false;
+    const present = (await Bridge.secretPresent(def.keyName)) ?? false;
     dot.style.background = present ? "#22c55e" : "#f4505e";
     state.textContent = keyText(present);
-    field.placeholder = present ? "••••••••••••  (stored)" : "Paste your Gemini API key";
+    field.placeholder = present ? "••••••••••••  (stored)" : def.placeholder;
     clearBtn.style.display = present ? "" : "none";
     await loadModels(present);
   }
@@ -189,7 +146,7 @@ function geminiSection(hasKey: boolean): HTMLElement {
     if (!value) return;
     clear(feedback);
     try {
-      await Bridge.secretSet("gemini-api-key", value);
+      await Bridge.secretSet(def.keyName, value);
       field.value = "";
       feedback.append(h("div", { class: "notice ok", text: "Saved. It never touches disk." }));
       await refresh();
@@ -201,7 +158,7 @@ function geminiSection(hasKey: boolean): HTMLElement {
   clearBtn.addEventListener("click", async () => {
     clear(feedback);
     try {
-      await Bridge.secretClear("gemini-api-key");
+      await Bridge.secretClear(def.keyName);
       feedback.append(h("div", { class: "notice ok", text: "Key removed." }));
       await refresh();
     } catch (err) {
@@ -213,18 +170,48 @@ function geminiSection(hasKey: boolean): HTMLElement {
   void loadModels(hasKey);
 
   return h(
+    "div",
+    {},
+    h("div", { class: "row" }, dot, state),
+    h("div", { class: "row" }, h("label", { text: "API key" }), field, saveBtn, clearBtn),
+    h("div", { class: "row" }, h("label", { text: "Model" }), model),
+    feedback,
+  );
+}
+
+/** Every AI Mochi can teach with, in one place: pick the provider, then its key and model. */
+function aiSection(): HTMLElement {
+  const provider = h("select", {}) as HTMLSelectElement;
+  for (const p of PROVIDERS) provider.append(h("option", { value: p.id, text: p.name }));
+  provider.value = settings.provider;
+
+  const panel = h("div", {});
+  let shown = 0;
+  async function render() {
+    const mine = ++shown;
+    const def = PROVIDERS.find((p) => p.id === settings.provider) ?? PROVIDERS[0];
+    const present = (await Bridge.secretPresent(def.keyName)) ?? false;
+    if (mine !== shown) return;
+    clear(panel);
+    panel.append(providerPanel(def, present));
+  }
+  provider.addEventListener("change", () => {
+    settings.provider = provider.value as Settings["provider"];
+    void save();
+    void render();
+  });
+  void render();
+
+  return h(
     "section",
     {},
-    h("h2", {}, dot, h("span", { text: "Gemini" })),
-    state,
+    h("h2", {}, h("span", { text: "AI" })),
     h("div", { class: "row" },
       h("label", { text: "Mochi uses" }),
       provider,
       h("span", { class: "hint", text: "the AI that teaches you" }),
     ),
-    h("div", { class: "row" }, h("label", { text: "API key" }), field, saveBtn, clearBtn),
-    h("div", { class: "row" }, h("label", { text: "Model" }), model),
-    feedback,
+    panel,
   );
 }
 
@@ -524,13 +511,9 @@ function generalSection(): HTMLElement {
     character.append(
       h("option", { value: "mochi", text: "Mochi" }),
       h("option", { value: "ribbon", text: "Ribbon — bangs, ponytail and bow" }),
-      // Imported skin bundles (any build).
+      // Imported hair skins.
       ...bundles.map((b) =>
         h("option", { value: BUNDLE_PREFIX + b.id, text: b.author ? `${b.name} — ${b.author}` : b.name }),
-      ),
-      // Dev builds only: skins kept outside git in src/mochi/local/.
-      ...localSkinNames().map((name) =>
-        h("option", { value: name, text: `${name[0].toUpperCase()}${name.slice(1)} (local)` }),
       ),
     );
     // A worn skin that was removed (or never existed) is Mochi again.
@@ -553,7 +536,7 @@ function generalSection(): HTMLElement {
   });
   const createSkin = h("button", {
     text: "Create…",
-    title: "Make a skin from your own pictures",
+    title: "Make a hair skin from your own pictures",
     onclick: () => void Bridge.openSkinEditor(null),
   });
   const importSkin = h("button", { text: "Import skin…" });
@@ -706,6 +689,11 @@ function generalSection(): HTMLElement {
     h("div", { class: "row" },
       h("label", { text: "Launch at startup" }),
       toggle(settings.autostart, (v) => { settings.autostart = v; void save(); }),
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Let Mochi use this PC" }),
+      toggle(settings.pcTools, (v) => { settings.pcTools = v; void save(); }),
+      h("span", { class: "hint", text: "when you ask in chat: open links, search the web, control music (Spotify), read basic PC info" }),
     ),
   );
 }
@@ -890,8 +878,6 @@ async function main() {
     settings = { ...settings, ...boot.settings };
     version = boot.version;
   }
-  const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
-  const hasGeminiKey = (await Bridge.secretPresent("gemini-api-key")) ?? false;
   const hasFishKey = (await Bridge.secretPresent("fish-audio-api-key")) ?? false;
 
   clear(root);
@@ -900,8 +886,7 @@ async function main() {
     learningSection(),
     remindersSection(),
     voiceSection(hasFishKey),
-    apiSection(hasKey),
-    geminiSection(hasGeminiKey),
+    aiSection(),
     generalSection(),
     keyboardSection(),
     h("div", {

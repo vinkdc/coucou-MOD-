@@ -1,0 +1,992 @@
+{
+  "NotchBuddy/Assets.xcassets/AppIcon.appiconset/Contents.json": {
+    "mtime": 1790934056.0136838,
+    "seen": 1791295867.6302593,
+    "ast_hash": "609f60f47eb3b654ab75d4b02ba5fc9e",
+    "semantic_hash": "609f60f47eb3b654ab75d4b02ba5fc9e"
+  },
+  "NotchBuddy/Assets.xcassets/Contents.json": {
+    "mtime": 1790934056.023678,
+    "seen": 1791295867.6302638,
+    "ast_hash": "b78ef11ad1ff5c00d1d1442816a5d98f",
+    "semantic_hash": "b78ef11ad1ff5c00d1d1442816a5d98f"
+  },
+  "NotchBuddy/Assets.xcassets/MenuBarIcon.imageset/Contents.json": {
+    "mtime": 1790934056.0246813,
+    "seen": 1791295867.6302662,
+    "ast_hash": "1ecd102a7961c6031dce75a1835967f1",
+    "semantic_hash": "1ecd102a7961c6031dce75a1835967f1"
+  },
+  "NotchBuddy/Sources/App/AppDelegate.swift": {
+    "mtime": 1790934056.0662172,
+    "seen": 1791295867.630267,
+    "ast_hash": "15018536c71b38a5b845053dd16c0522",
+    "semantic_hash": "15018536c71b38a5b845053dd16c0522"
+  },
+  "NotchBuddy/Sources/App/AppLog.swift": {
+    "mtime": 1790934056.0662172,
+    "seen": 1791295867.6302676,
+    "ast_hash": "eaf1bcf450e5a6b3fc1f001bcff4726e",
+    "semantic_hash": "eaf1bcf450e5a6b3fc1f001bcff4726e"
+  },
+  "NotchBuddy/Sources/App/AppState.swift": {
+    "mtime": 1790934056.067724,
+    "seen": 1791295867.6302686,
+    "ast_hash": "1b1f368fd7138d3abc342e0895de3c39",
+    "semantic_hash": "1b1f368fd7138d3abc342e0895de3c39"
+  },
+  "NotchBuddy/Sources/App/BotCanvasView.swift": {
+    "mtime": 1790934056.067724,
+    "seen": 1791295867.6302698,
+    "ast_hash": "a8528095fa0954a2690deb657cf4f178",
+    "semantic_hash": "a8528095fa0954a2690deb657cf4f178"
+  },
+  "NotchBuddy/Sources/App/BotEngine.swift": {
+    "mtime": 1790934056.0687313,
+    "seen": 1791295867.6302705,
+    "ast_hash": "5d6b91e60ea2e5d9ec78bbf7f5e8ea68",
+    "semantic_hash": "5d6b91e60ea2e5d9ec78bbf7f5e8ea68"
+  },
+  "NotchBuddy/Sources/App/CalcomPoller.swift": {
+    "mtime": 1790934056.0687313,
+    "seen": 1791295867.630271,
+    "ast_hash": "39868a5e0d2da0b9e8e8d1348330b7ae",
+    "semantic_hash": "39868a5e0d2da0b9e8e8d1348330b7ae"
+  },
+  "NotchBuddy/Sources/App/ClaudeService.swift": {
+    "mtime": 1790934056.069729,
+    "seen": 1791295867.6302717,
+    "ast_hash": "14429220e951bb17d3b5cc341a82c6a1",
+    "semantic_hash": "14429220e951bb17d3b5cc341a82c6a1"
+  },
+  "NotchBuddy/Sources/App/FileDropView.swift": {
+    "mtime": 1790934056.069729,
+    "seen": 1791295867.6302726,
+    "ast_hash": "cef5671192217be20a8e44cdc9a9c7e6",
+    "semantic_hash": "cef5671192217be20a8e44cdc9a9c7e6"
+  },
+  "NotchBuddy/Sources/App/GithubPoller.swift": {
+    "mtime": 1790934056.069729,
+    "seen": 1791295867.6302733,
+    "ast_hash": "90af5855355134721cab36b35bf576e8",
+    "semantic_hash": "90af5855355134721cab36b35bf576e8"
+  },
+  "NotchBuddy/Sources/App/GreetingCanvasView.swift": {
+    "mtime": 1790934056.0707316,
+    "seen": 1791295867.6302738,
+    "ast_hash": "113109f11f60108b9823253d3460f286",
+    "semantic_hash": "113109f11f60108b9823253d3460f286"
+  },
+  "NotchBuddy/Sources/App/HookServer.swift": {
+    "mtime": 1790934056.0707316,
+    "seen": 1791295867.6302745,
+    "ast_hash": "27cb3c6234fc494e4a1847d58a42c220",
+    "semantic_hash": "27cb3c6234fc494e4a1847d58a42c220"
+  },
+  "NotchBuddy/Sources/App/IslandRootView.swift": {
+    "mtime": 1790934056.0717318,
+    "seen": 1791295867.630275,
+    "ast_hash": "ed330f509e6c0d64640bcdab7062afe1",
+    "semantic_hash": "ed330f509e6c0d64640bcdab7062afe1"
+  },
+  "NotchBuddy/Sources/App/IslandScreenGeometry.swift": {
+    "mtime": 1790934056.0717318,
+    "seen": 1791295867.6302757,
+    "ast_hash": "67b5581e60a6d6a19acb2064b19ec99b",
+    "semantic_hash": "67b5581e60a6d6a19acb2064b19ec99b"
+  },
+  "NotchBuddy/Sources/App/IslandStateMachine.swift": {
+    "mtime": 1790934056.0717318,
+    "seen": 1791295867.6302767,
+    "ast_hash": "6215f288d2063bcfa7d68465bf7b190f",
+    "semantic_hash": "6215f288d2063bcfa7d68465bf7b190f"
+  },
+  "NotchBuddy/Sources/App/IslandTypes.swift": {
+    "mtime": 1790934056.0728087,
+    "seen": 1791295867.6302772,
+    "ast_hash": "0b99243f548d64ba8c940cfd347cf369",
+    "semantic_hash": "0b99243f548d64ba8c940cfd347cf369"
+  },
+  "NotchBuddy/Sources/App/IslandViewContent.swift": {
+    "mtime": 1790934056.0738099,
+    "seen": 1791295867.6302779,
+    "ast_hash": "8acaaf3b919276ff914a22da39b7667d",
+    "semantic_hash": "8acaaf3b919276ff914a22da39b7667d"
+  },
+  "NotchBuddy/Sources/App/IslandWindowController.swift": {
+    "mtime": 1790934056.0738099,
+    "seen": 1791295867.6302783,
+    "ast_hash": "5246923e82978550160d364c6c4f6410",
+    "semantic_hash": "5246923e82978550160d364c6c4f6410"
+  },
+  "NotchBuddy/Sources/App/N8nPoller.swift": {
+    "mtime": 1790934056.0748086,
+    "seen": 1791295867.630279,
+    "ast_hash": "a67124c126ad9052626e9ea769766835",
+    "semantic_hash": "a67124c126ad9052626e9ea769766835"
+  },
+  "NotchBuddy/Sources/App/NotchBuddyApp.swift": {
+    "mtime": 1790934056.0748086,
+    "seen": 1791295867.6302798,
+    "ast_hash": "edd5c9c7d48e7c80753273749f0f9808",
+    "semantic_hash": "edd5c9c7d48e7c80753273749f0f9808"
+  },
+  "NotchBuddy/Sources/App/NotionPoller.swift": {
+    "mtime": 1790934056.0748086,
+    "seen": 1791295867.6302807,
+    "ast_hash": "47f9f5b64ec5577099636f42591571b3",
+    "semantic_hash": "47f9f5b64ec5577099636f42591571b3"
+  },
+  "NotchBuddy/Sources/App/PillCatalog.swift": {
+    "mtime": 1790934056.0748086,
+    "seen": 1791295867.6302814,
+    "ast_hash": "9c91879f04da1ff3dc8b91f42abe659d",
+    "semantic_hash": "9c91879f04da1ff3dc8b91f42abe659d"
+  },
+  "NotchBuddy/Sources/App/ResendPoller.swift": {
+    "mtime": 1790934056.0758078,
+    "seen": 1791295867.630282,
+    "ast_hash": "e524743047245540090301538d13ca91",
+    "semantic_hash": "e524743047245540090301538d13ca91"
+  },
+  "NotchBuddy/Sources/App/SafeWebURL.swift": {
+    "mtime": 1790934056.0758078,
+    "seen": 1791295867.6302826,
+    "ast_hash": "d058a52b0946759e50d56d5d0ba62d0b",
+    "semantic_hash": "d058a52b0946759e50d56d5d0ba62d0b"
+  },
+  "NotchBuddy/Sources/App/SettingsView.swift": {
+    "mtime": 1790934056.0758078,
+    "seen": 1791295867.6302836,
+    "ast_hash": "5a7fccd59133406b73aee9d6ced35a77",
+    "semantic_hash": "5a7fccd59133406b73aee9d6ced35a77"
+  },
+  "NotchBuddy/Sources/App/SoundEngine.swift": {
+    "mtime": 1790934056.0768077,
+    "seen": 1791295867.6302843,
+    "ast_hash": "0c7d922bdafb8f87aa0adcf7a2ac69f0",
+    "semantic_hash": "0c7d922bdafb8f87aa0adcf7a2ac69f0"
+  },
+  "NotchBuddy/Sources/App/StripePoller.swift": {
+    "mtime": 1790934056.0768077,
+    "seen": 1791295867.6302848,
+    "ast_hash": "acf7698754c04d2ce1b83cec744a84bf",
+    "semantic_hash": "acf7698754c04d2ce1b83cec744a84bf"
+  },
+  "NotchBuddy/Sources/App/UploadCanvasView.swift": {
+    "mtime": 1790934056.0768077,
+    "seen": 1791295867.6302855,
+    "ast_hash": "99ec339ae606df1678dafddb008b12a8",
+    "semantic_hash": "99ec339ae606df1678dafddb008b12a8"
+  },
+  "NotchBuddy/Sources/App/UploadSequenceEngine.swift": {
+    "mtime": 1790934056.0778065,
+    "seen": 1791295867.630286,
+    "ast_hash": "33a1d846558732e444fb0fa4b9068681",
+    "semantic_hash": "33a1d846558732e444fb0fa4b9068681"
+  },
+  "NotchBuddy/Sources/App/VercelPoller.swift": {
+    "mtime": 1790934056.0778065,
+    "seen": 1791295867.630287,
+    "ast_hash": "bf2780bbec385717ba991e32395abab9",
+    "semantic_hash": "bf2780bbec385717ba991e32395abab9"
+  },
+  "NotchBuddy/Sources/App/WindowContextCapture.swift": {
+    "mtime": 1790934056.0778065,
+    "seen": 1791295867.6302876,
+    "ast_hash": "231c8e509cefcd56b81fcca865dc152a",
+    "semantic_hash": "231c8e509cefcd56b81fcca865dc152a"
+  },
+  "docs/examples/skin-example/manifest.json": {
+    "mtime": 1791274020.1879966,
+    "seen": 1791295867.6302881,
+    "ast_hash": "240e7464423df34e5209035c9a33cf37",
+    "semantic_hash": "240e7464423df34e5209035c9a33cf37"
+  },
+  "scripts/release.sh": {
+    "mtime": 1790934056.1697476,
+    "seen": 1791295867.6302888,
+    "ast_hash": "fe2c8ec7e92a328ed224aa8487f17cf7",
+    "semantic_hash": "fe2c8ec7e92a328ed224aa8487f17cf7"
+  },
+  "scripts/test-safe-links.sh": {
+    "mtime": 1790934056.1697476,
+    "seen": 1791295867.6302893,
+    "ast_hash": "5470cc8e042e1f182482fcfcabc22074",
+    "semantic_hash": "5470cc8e042e1f182482fcfcabc22074"
+  },
+  "scripts/test-screen-geometry.sh": {
+    "mtime": 1790934056.1707468,
+    "seen": 1791295867.6302903,
+    "ast_hash": "a92659e46d0d328a94f831473f2aedca",
+    "semantic_hash": "a92659e46d0d328a94f831473f2aedca"
+  },
+  "tests/IslandScreenGeometryTests.swift": {
+    "mtime": 1790934056.1707468,
+    "seen": 1791295867.630291,
+    "ast_hash": "8867a468b55cabb93661e0bdb27e8058",
+    "semantic_hash": "8867a468b55cabb93661e0bdb27e8058"
+  },
+  "tests/SafeWebURLTests.swift": {
+    "mtime": 1790934056.1717477,
+    "seen": 1791295867.6302917,
+    "ast_hash": "37bd6063067c7a6bef3409016951a1ce",
+    "semantic_hash": "37bd6063067c7a6bef3409016951a1ce"
+  },
+  "windows/Cargo.toml": {
+    "mtime": 1791220659.4254074,
+    "seen": 1791295867.6302922,
+    "ast_hash": "f0615caf7db983232972ece16cbcef34",
+    "semantic_hash": "f0615caf7db983232972ece16cbcef34"
+  },
+  "windows/package.json": {
+    "mtime": 1791221111.1994004,
+    "seen": 1791295867.630293,
+    "ast_hash": "28999837ae19a78a0d05bf7969013a21",
+    "semantic_hash": "28999837ae19a78a0d05bf7969013a21"
+  },
+  "windows/scripts/gen-icons.mjs": {
+    "mtime": 1790934056.1818845,
+    "seen": 1791295867.6302936,
+    "ast_hash": "1b08bd0953e673bdddfe1047985f9857",
+    "semantic_hash": "1b08bd0953e673bdddfe1047985f9857"
+  },
+  "windows/scripts/make-example-skin.mjs": {
+    "mtime": 1791274020.0354254,
+    "seen": 1791295867.6302943,
+    "ast_hash": "a45b41ac938fd286ba78a590bf05aba4",
+    "semantic_hash": "a45b41ac938fd286ba78a590bf05aba4"
+  },
+  "windows/scripts/pack.mjs": {
+    "mtime": 1790934056.1828816,
+    "seen": 1791295867.6302953,
+    "ast_hash": "8e1c217e63a94552e90c1ded63375da2",
+    "semantic_hash": "8e1c217e63a94552e90c1ded63375da2"
+  },
+  "windows/skin-samples/claude-mascot/manifest.json": {
+    "mtime": 1791118086.733568,
+    "seen": 1791295867.630296,
+    "ast_hash": "5c1b97038517a187fb23a2516b5f7d2a",
+    "semantic_hash": "5c1b97038517a187fb23a2516b5f7d2a"
+  },
+  "windows/skin-samples/make-claude-mascot.mjs": {
+    "mtime": 1791118083.0255504,
+    "seen": 1791295867.6302972,
+    "ast_hash": "e330d99d89b61ab72897d4e93b74f4f4",
+    "semantic_hash": "e330d99d89b61ab72897d4e93b74f4f4"
+  },
+  "windows/src-tauri/Cargo.toml": {
+    "mtime": 1791264865.1285925,
+    "seen": 1791295867.630298,
+    "ast_hash": "5d7455d9e78b32be08a63b707bde13c1",
+    "semantic_hash": "5d7455d9e78b32be08a63b707bde13c1"
+  },
+  "windows/src-tauri/build.rs": {
+    "mtime": 1790934056.1838822,
+    "seen": 1791295867.6302986,
+    "ast_hash": "667702979da61fdc96948886b7cd7a33",
+    "semantic_hash": "667702979da61fdc96948886b7cd7a33"
+  },
+  "windows/src-tauri/capabilities/default.json": {
+    "mtime": 1791224107.6019578,
+    "seen": 1791295867.630299,
+    "ast_hash": "55fc0ee367fa9c4be8bd69d9257d508d",
+    "semantic_hash": "55fc0ee367fa9c4be8bd69d9257d508d"
+  },
+  "windows/src-tauri/src/assistant.rs": {
+    "mtime": 1791265974.1331499,
+    "seen": 1791295867.6302998,
+    "ast_hash": "c0c5d30359544c5f0b830c7a55837a39",
+    "semantic_hash": "c0c5d30359544c5f0b830c7a55837a39"
+  },
+  "windows/src-tauri/src/claude.rs": {
+    "mtime": 1791221776.622736,
+    "seen": 1791295867.6303005,
+    "ast_hash": "e57a798602cc2cb287d57d944c47a3fd",
+    "semantic_hash": "e57a798602cc2cb287d57d944c47a3fd"
+  },
+  "windows/src-tauri/src/deepseek.rs": {
+    "mtime": 1791265954.7365391,
+    "seen": 1791295867.6303012,
+    "ast_hash": "d9bbbbd4712a8e3022fc55895223265a",
+    "semantic_hash": "d9bbbbd4712a8e3022fc55895223265a"
+  },
+  "windows/src-tauri/src/fishaudio.rs": {
+    "mtime": 1791223113.9933085,
+    "seen": 1791295867.630302,
+    "ast_hash": "64caea0d677a0f7be17b3201ed56841a",
+    "semantic_hash": "64caea0d677a0f7be17b3201ed56841a"
+  },
+  "windows/src-tauri/src/gemini.rs": {
+    "mtime": 1791223250.536533,
+    "seen": 1791295867.6303027,
+    "ast_hash": "55eaed19873aea9fde85f489e4c025d6",
+    "semantic_hash": "55eaed19873aea9fde85f489e4c025d6"
+  },
+  "windows/src-tauri/src/hotkey.rs": {
+    "mtime": 1791223068.9258409,
+    "seen": 1791295867.6303031,
+    "ast_hash": "1d2bc68849cd4110de0782bd2e18771c",
+    "semantic_hash": "1d2bc68849cd4110de0782bd2e18771c"
+  },
+  "windows/src-tauri/src/island.rs": {
+    "mtime": 1791224107.6019578,
+    "seen": 1791295867.630304,
+    "ast_hash": "9c916ad4980b68d448be8a24a50bf06f",
+    "semantic_hash": "9c916ad4980b68d448be8a24a50bf06f"
+  },
+  "windows/src-tauri/src/learner.rs": {
+    "mtime": 1791223427.0674882,
+    "seen": 1791295867.6303048,
+    "ast_hash": "ec30718f284980da43e5d27d53c00fc6",
+    "semantic_hash": "ec30718f284980da43e5d27d53c00fc6"
+  },
+  "windows/src-tauri/src/lib.rs": {
+    "mtime": 1791265983.9960825,
+    "seen": 1791295867.6303053,
+    "ast_hash": "8e272195bc74bb4279f53d82f583aa9a",
+    "semantic_hash": "8e272195bc74bb4279f53d82f583aa9a"
+  },
+  "windows/src-tauri/src/log.rs": {
+    "mtime": 1791220673.7952173,
+    "seen": 1791295867.630306,
+    "ast_hash": "949742dc9fe8bb3e2cedcc14bfa91a7a",
+    "semantic_hash": "949742dc9fe8bb3e2cedcc14bfa91a7a"
+  },
+  "windows/src-tauri/src/main.rs": {
+    "mtime": 1791220660.2491431,
+    "seen": 1791295867.6303067,
+    "ast_hash": "cf210a75d9d96725456b73720599bba1",
+    "semantic_hash": "cf210a75d9d96725456b73720599bba1"
+  },
+  "windows/src-tauri/src/pc.rs": {
+    "mtime": 1791264974.3228867,
+    "seen": 1791295867.6303074,
+    "ast_hash": "c352ebb03b46e7f76b4e8d01e34bd7a9",
+    "semantic_hash": "c352ebb03b46e7f76b4e8d01e34bd7a9"
+  },
+  "windows/src-tauri/src/platform/linux.rs": {
+    "mtime": 1791264865.4596248,
+    "seen": 1791295867.6303082,
+    "ast_hash": "7c187cc360274de38b5ee1afee4ff1ea",
+    "semantic_hash": "7c187cc360274de38b5ee1afee4ff1ea"
+  },
+  "windows/src-tauri/src/platform/mod.rs": {
+    "mtime": 1791221805.1322439,
+    "seen": 1791295867.6303089,
+    "ast_hash": "99e812122d3707ee71c68986ef4bc3d8",
+    "semantic_hash": "99e812122d3707ee71c68986ef4bc3d8"
+  },
+  "windows/src-tauri/src/platform/windows.rs": {
+    "mtime": 1791264864.8159223,
+    "seen": 1791295867.6303093,
+    "ast_hash": "48223b01eb2019e5c6a793dccae5f8ee",
+    "semantic_hash": "48223b01eb2019e5c6a793dccae5f8ee"
+  },
+  "windows/src-tauri/src/secrets.rs": {
+    "mtime": 1791265974.5116506,
+    "seen": 1791295867.63031,
+    "ast_hash": "9ab5eee50368be628dd052ac35cb9472",
+    "semantic_hash": "9ab5eee50368be628dd052ac35cb9472"
+  },
+  "windows/src-tauri/src/settings.rs": {
+    "mtime": 1791270402.711482,
+    "seen": 1791295867.630311,
+    "ast_hash": "745fc4e4d18d1b066ab536c989f1cf92",
+    "semantic_hash": "745fc4e4d18d1b066ab536c989f1cf92"
+  },
+  "windows/src-tauri/src/skins.rs": {
+    "mtime": 1791269345.8577206,
+    "seen": 1791295867.6303115,
+    "ast_hash": "ff67b00fa64abe1291ae84d6ac1bd2a8",
+    "semantic_hash": "ff67b00fa64abe1291ae84d6ac1bd2a8"
+  },
+  "windows/src-tauri/src/tray.rs": {
+    "mtime": 1791224107.6019578,
+    "seen": 1791295867.6303122,
+    "ast_hash": "444b5786892e2954fa13080a799ec0c4",
+    "semantic_hash": "444b5786892e2954fa13080a799ec0c4"
+  },
+  "windows/src-tauri/src/tutor.rs": {
+    "mtime": 1791264957.6762395,
+    "seen": 1791295867.630313,
+    "ast_hash": "3ff184efb303ec8b08e6925cc7000b74",
+    "semantic_hash": "3ff184efb303ec8b08e6925cc7000b74"
+  },
+  "windows/src-tauri/tauri.conf.json": {
+    "mtime": 1791224107.6019578,
+    "seen": 1791295867.6303134,
+    "ast_hash": "6f3c4c843a01b928fdc9f0b05b900c71",
+    "semantic_hash": "6f3c4c843a01b928fdc9f0b05b900c71"
+  },
+  "windows/src-tauri/tauri.linux.conf.json": {
+    "mtime": 1791220659.3365066,
+    "seen": 1791295867.6303144,
+    "ast_hash": "8ee69eef28f1f4cf84be1e746b0a31ed",
+    "semantic_hash": "8ee69eef28f1f4cf84be1e746b0a31ed"
+  },
+  "windows/src/core/anim.ts": {
+    "mtime": 1790934056.1941755,
+    "seen": 1791295867.630315,
+    "ast_hash": "5501d22f9db890d3bd5999d3bb3f503d",
+    "semantic_hash": "5501d22f9db890d3bd5999d3bb3f503d"
+  },
+  "windows/src/core/bridge.ts": {
+    "mtime": 1791265984.3226905,
+    "seen": 1791295867.6303155,
+    "ast_hash": "57d29b5e8771cf37a89215a4ac8cf137",
+    "semantic_hash": "57d29b5e8771cf37a89215a4ac8cf137"
+  },
+  "windows/src/core/keys.ts": {
+    "mtime": 1791225295.8891504,
+    "seen": 1791295867.6303163,
+    "ast_hash": "7cb56c0113dc655bdf54cfba65522f45",
+    "semantic_hash": "7cb56c0113dc655bdf54cfba65522f45"
+  },
+  "windows/src/core/layout.ts": {
+    "mtime": 1791224651.4471228,
+    "seen": 1791295867.6303167,
+    "ast_hash": "6c2350f2db670901f12890f6c7a4d5a5",
+    "semantic_hash": "6c2350f2db670901f12890f6c7a4d5a5"
+  },
+  "windows/src/core/mic.ts": {
+    "mtime": 1791223397.773615,
+    "seen": 1791295867.6303172,
+    "ast_hash": "b72d733c40888d1ee56774799c0df916",
+    "semantic_hash": "b72d733c40888d1ee56774799c0df916"
+  },
+  "windows/src/core/progress.ts": {
+    "mtime": 1791224049.838517,
+    "seen": 1791295867.6303182,
+    "ast_hash": "e29d2299ad885b13c99e5590fbf1300a",
+    "semantic_hash": "e29d2299ad885b13c99e5590fbf1300a"
+  },
+  "windows/src/core/sound.ts": {
+    "mtime": 1790934056.1953864,
+    "seen": 1791295867.6303186,
+    "ast_hash": "b11d21b250dc051ebb096510e8c35a8c",
+    "semantic_hash": "b11d21b250dc051ebb096510e8c35a8c"
+  },
+  "windows/src/core/state.ts": {
+    "mtime": 1791270402.7103686,
+    "seen": 1791295867.6303196,
+    "ast_hash": "ed64c3aef51b87de036ded3d9b02edd4",
+    "semantic_hash": "ed64c3aef51b87de036ded3d9b02edd4"
+  },
+  "windows/src/core/voice.ts": {
+    "mtime": 1791274666.3713553,
+    "seen": 1791295867.6303203,
+    "ast_hash": "f5da1e73457af0e79ddfe743c3731595",
+    "semantic_hash": "f5da1e73457af0e79ddfe743c3731595"
+  },
+  "windows/src/island/fsm.ts": {
+    "mtime": 1791047798.971231,
+    "seen": 1791295867.6303213,
+    "ast_hash": "dc31024fdc636f65d9c4d3a3b0fb2bf7",
+    "semantic_hash": "dc31024fdc636f65d9c4d3a3b0fb2bf7"
+  },
+  "windows/src/island/island.ts": {
+    "mtime": 1791274666.3718777,
+    "seen": 1791295867.6303217,
+    "ast_hash": "9ac2e30daccc074c7b703ce662572810",
+    "semantic_hash": "9ac2e30daccc074c7b703ce662572810"
+  },
+  "windows/src/island/reminders.ts": {
+    "mtime": 1791223356.091368,
+    "seen": 1791295867.6303225,
+    "ast_hash": "2b392a0f801f7b59f7795f2a4f284050",
+    "semantic_hash": "2b392a0f801f7b59f7795f2a4f284050"
+  },
+  "windows/src/main.ts": {
+    "mtime": 1791224651.886706,
+    "seen": 1791295867.630323,
+    "ast_hash": "25c5f4f64cdb39841e2753696deb37ed",
+    "semantic_hash": "25c5f4f64cdb39841e2753696deb37ed"
+  },
+  "windows/src/mochi/bundles.ts": {
+    "mtime": 1791269326.3723836,
+    "seen": 1791295867.6303236,
+    "ast_hash": "fc2fb3429e11af6935749285cc207826",
+    "semantic_hash": "fc2fb3429e11af6935749285cc207826"
+  },
+  "windows/src/mochi/engine.ts": {
+    "mtime": 1791274705.0594716,
+    "seen": 1791295867.6303241,
+    "ast_hash": "8fd8d0c72169bae2f15959d7b7c25b2c",
+    "semantic_hash": "8fd8d0c72169bae2f15959d7b7c25b2c"
+  },
+  "windows/src/mochi/greeting.ts": {
+    "mtime": 1791052226.644655,
+    "seen": 1791295867.630326,
+    "ast_hash": "8949565e3a106c386df013bf737ea3b7",
+    "semantic_hash": "8949565e3a106c386df013bf737ea3b7"
+  },
+  "windows/src/mochi/hair.ts": {
+    "mtime": 1791273978.873784,
+    "seen": 1791295867.6303267,
+    "ast_hash": "37fa90f4ae1eccde184bdb23dcc8470b",
+    "semantic_hash": "37fa90f4ae1eccde184bdb23dcc8470b"
+  },
+  "windows/src/mochi/manifest.ts": {
+    "mtime": 1791273978.873784,
+    "seen": 1791295867.6303272,
+    "ast_hash": "22524ca978911a2d8f63d80894ab5c08",
+    "semantic_hash": "22524ca978911a2d8f63d80894ab5c08"
+  },
+  "windows/src/mochi/puppet.ts": {
+    "mtime": 1791269319.6441147,
+    "seen": 1791295867.6303282,
+    "ast_hash": "a576549f3272e153941123348636b552",
+    "semantic_hash": "a576549f3272e153941123348636b552"
+  },
+  "windows/src/mochi/skin.ts": {
+    "mtime": 1791270419.4889386,
+    "seen": 1791295867.6303287,
+    "ast_hash": "a5877af69eb4fc33cac97f76e3d30b20",
+    "semantic_hash": "a5877af69eb4fc33cac97f76e3d30b20"
+  },
+  "windows/src/settings/main.ts": {
+    "mtime": 1791270402.7093668,
+    "seen": 1791295867.6303294,
+    "ast_hash": "571cb91f2103cb243fe46bf498ea600c",
+    "semantic_hash": "571cb91f2103cb243fe46bf498ea600c"
+  },
+  "windows/src/skineditor/doc.ts": {
+    "mtime": 1791273994.7784832,
+    "seen": 1791295867.6303298,
+    "ast_hash": "78696af49bcc29cb06f82d83334775b3",
+    "semantic_hash": "78696af49bcc29cb06f82d83334775b3"
+  },
+  "windows/src/skineditor/main.ts": {
+    "mtime": 1791274006.6774378,
+    "seen": 1791295867.6303306,
+    "ast_hash": "b938d8645c2465f53cbe6d945165eb80",
+    "semantic_hash": "b938d8645c2465f53cbe6d945165eb80"
+  },
+  "windows/src/skineditor/preview.ts": {
+    "mtime": 1791269468.0428734,
+    "seen": 1791295867.6303313,
+    "ast_hash": "a2b3948c105f4c9e63e7fc8fc17f48b9",
+    "semantic_hash": "a2b3948c105f4c9e63e7fc8fc17f48b9"
+  },
+  "windows/src/skineditor/stage.ts": {
+    "mtime": 1791273994.7791162,
+    "seen": 1791295867.630332,
+    "ast_hash": "4813b654e8ec007284e7f9ba72549049",
+    "semantic_hash": "4813b654e8ec007284e7f9ba72549049"
+  },
+  "windows/src/study/app.ts": {
+    "mtime": 1791224956.6921592,
+    "seen": 1791295867.6303327,
+    "ast_hash": "0bb98030a88b8f3b7801b194270354ea",
+    "semantic_hash": "0bb98030a88b8f3b7801b194270354ea"
+  },
+  "windows/src/study/cards.ts": {
+    "mtime": 1791226413.4649167,
+    "seen": 1791295867.6303332,
+    "ast_hash": "7ecd474d6a0613245596f2c020094076",
+    "semantic_hash": "7ecd474d6a0613245596f2c020094076"
+  },
+  "windows/src/study/markup.ts": {
+    "mtime": 1791221936.3215468,
+    "seen": 1791295867.630334,
+    "ast_hash": "e3463b9bb92461b21e08970b5484290a",
+    "semantic_hash": "e3463b9bb92461b21e08970b5484290a"
+  },
+  "windows/src/study/pronounce.ts": {
+    "mtime": 1791223348.6931238,
+    "seen": 1791295867.6303346,
+    "ast_hash": "765692b381d5c7995175e953c31c6f62",
+    "semantic_hash": "765692b381d5c7995175e953c31c6f62"
+  },
+  "windows/src/study/reply.ts": {
+    "mtime": 1791226413.4649167,
+    "seen": 1791295867.6303353,
+    "ast_hash": "9af2b93c451ea9beeb08c8b24bfc2105",
+    "semantic_hash": "9af2b93c451ea9beeb08c8b24bfc2105"
+  },
+  "windows/src/study/romaji.ts": {
+    "mtime": 1791221918.1879654,
+    "seen": 1791295867.630336,
+    "ast_hash": "267fb06ea05945851b5ec6d236be8927",
+    "semantic_hash": "267fb06ea05945851b5ec6d236be8927"
+  },
+  "windows/src/study/scenarios.ts": {
+    "mtime": 1791224956.963597,
+    "seen": 1791295867.6303368,
+    "ast_hash": "0dc773562610b93952709641a390d41a",
+    "semantic_hash": "0dc773562610b93952709641a390d41a"
+  },
+  "windows/src/study/shadow.ts": {
+    "mtime": 1791226413.4649167,
+    "seen": 1791295867.6303372,
+    "ast_hash": "c4edc8f4a2f769870ac3af7b59ff2319",
+    "semantic_hash": "c4edc8f4a2f769870ac3af7b59ff2319"
+  },
+  "windows/src/study/stats.ts": {
+    "mtime": 1791226413.4659193,
+    "seen": 1791295867.630338,
+    "ast_hash": "98e56042f6e64dff85593528c1fa31b1",
+    "semantic_hash": "98e56042f6e64dff85593528c1fa31b1"
+  },
+  "windows/src/views/chat.ts": {
+    "mtime": 1791256311.0492818,
+    "seen": 1791295867.630339,
+    "ast_hash": "5f3712b932279ebc62c801fea3c8b40b",
+    "semantic_hash": "5f3712b932279ebc62c801fea3c8b40b"
+  },
+  "windows/src/views/dom.ts": {
+    "mtime": 1791105688.7176323,
+    "seen": 1791295867.6303394,
+    "ast_hash": "fb0ef128945c0f0e1a2dd2b29eb14f85",
+    "semantic_hash": "fb0ef128945c0f0e1a2dd2b29eb14f85"
+  },
+  "windows/src/views/icons.ts": {
+    "mtime": 1791226318.503891,
+    "seen": 1791295867.63034,
+    "ast_hash": "b1b60671210ff714942976dfcc7d47e6",
+    "semantic_hash": "b1b60671210ff714942976dfcc7d47e6"
+  },
+  "windows/src/views/lookup.ts": {
+    "mtime": 1791223466.4419832,
+    "seen": 1791295867.6303406,
+    "ast_hash": "9277bcf63c6605f5e4f7cae270c19826",
+    "semantic_hash": "9277bcf63c6605f5e4f7cae270c19826"
+  },
+  "windows/src/views/phosphor.ts": {
+    "mtime": 1791226404.2502422,
+    "seen": 1791295867.6303413,
+    "ast_hash": "95bf69a963b7cbd53743485fb13e16aa",
+    "semantic_hash": "95bf69a963b7cbd53743485fb13e16aa"
+  },
+  "windows/src/views/study.ts": {
+    "mtime": 1791224956.7305937,
+    "seen": 1791295867.630342,
+    "ast_hash": "6c1f5e3ab5e91bd7eeadd3ae54a9991e",
+    "semantic_hash": "6c1f5e3ab5e91bd7eeadd3ae54a9991e"
+  },
+  "windows/src/views/views.ts": {
+    "mtime": 1791257421.8091204,
+    "seen": 1791295867.6303427,
+    "ast_hash": "cf34ea21450d7911733d01b4b2f58ec5",
+    "semantic_hash": "cf34ea21450d7911733d01b4b2f58ec5"
+  },
+  "windows/tests/logic.test.ts": {
+    "mtime": 1791223349.2124546,
+    "seen": 1791295867.6303434,
+    "ast_hash": "19b23e73d44c0d228cea6cc3587465c9",
+    "semantic_hash": "19b23e73d44c0d228cea6cc3587465c9"
+  },
+  "windows/tests/markup.test.ts": {
+    "mtime": 1791221918.288945,
+    "seen": 1791295867.630344,
+    "ast_hash": "a07e7a8afc63897479a563a7dac0c498",
+    "semantic_hash": "a07e7a8afc63897479a563a7dac0c498"
+  },
+  "windows/tsconfig.json": {
+    "mtime": 1791221082.1323097,
+    "seen": 1791295867.6303446,
+    "ast_hash": "8dab4670d5fcdd9fc0482cdae07a0342",
+    "semantic_hash": "8dab4670d5fcdd9fc0482cdae07a0342"
+  },
+  "windows/vite.config.ts": {
+    "mtime": 1791224057.3045404,
+    "seen": 1791295867.630345,
+    "ast_hash": "e60cb3bea8785787691d07de2a1eda71",
+    "semantic_hash": "e60cb3bea8785787691d07de2a1eda71"
+  },
+  ".github/workflows/build.yml": {
+    "mtime": 1790934056.0096807,
+    "seen": 1791295867.630346,
+    "ast_hash": "1eafe0d4836dd31aafdaeea9642c8e63",
+    "semantic_hash": "1eafe0d4836dd31aafdaeea9642c8e63"
+  },
+  ".github/workflows/linux.yml": {
+    "mtime": 1790934056.010683,
+    "seen": 1791295867.6303465,
+    "ast_hash": "9fe08b842fac2c0784ecb1452c3e15c4",
+    "semantic_hash": "9fe08b842fac2c0784ecb1452c3e15c4"
+  },
+  ".github/workflows/release.yml": {
+    "mtime": 1790934056.0116832,
+    "seen": 1791295867.6303473,
+    "ast_hash": "f421f32fd1c07ef003aa5e78816974ef",
+    "semantic_hash": "f421f32fd1c07ef003aa5e78816974ef"
+  },
+  ".github/workflows/windows.yml": {
+    "mtime": 1790934056.0116832,
+    "seen": 1791295867.630348,
+    "ast_hash": "bb91b70b6a8e736e5c77629eef99f589",
+    "semantic_hash": "bb91b70b6a8e736e5c77629eef99f589"
+  },
+  "CHANGELOG.md": {
+    "mtime": 1790934056.0126834,
+    "seen": 1791295867.6303487,
+    "ast_hash": "adb269ea51b5fd85283c6f0d1ec7650e",
+    "semantic_hash": "adb269ea51b5fd85283c6f0d1ec7650e"
+  },
+  "CLAUDE.md": {
+    "mtime": 1791226424.061629,
+    "seen": 1791295867.6303494,
+    "ast_hash": "f47ad4e85b1e7867182d238909ae4a57",
+    "semantic_hash": "f47ad4e85b1e7867182d238909ae4a57"
+  },
+  "CONTRIBUTING.md": {
+    "mtime": 1790934056.0126834,
+    "seen": 1791295867.63035,
+    "ast_hash": "b06767738f9420476d363a27345810a7",
+    "semantic_hash": "b06767738f9420476d363a27345810a7"
+  },
+  "LICENSE-ASSETS.md": {
+    "mtime": 1790934056.0136838,
+    "seen": 1791295867.6303508,
+    "ast_hash": "d0b495a5dd9085d30dc549cb2f7943ef",
+    "semantic_hash": "d0b495a5dd9085d30dc549cb2f7943ef"
+  },
+  "NotchBuddy/project.yml": {
+    "mtime": 1790934056.0789511,
+    "seen": 1791295867.6303515,
+    "ast_hash": "fac2d8339814c259d8b8466e2e2d613c",
+    "semantic_hash": "fac2d8339814c259d8b8466e2e2d613c"
+  },
+  "README.md": {
+    "mtime": 1791269594.9794915,
+    "seen": 1791295867.630352,
+    "ast_hash": "06a7302dbf0300070b6377176953ba9d",
+    "semantic_hash": "06a7302dbf0300070b6377176953ba9d"
+  },
+  "design/animations/greeting-v2.html": {
+    "mtime": 1790934056.0799575,
+    "seen": 1791295867.630353,
+    "ast_hash": "6fd3b13c01580e3b8895960f0defb5bd",
+    "semantic_hash": "6fd3b13c01580e3b8895960f0defb5bd"
+  },
+  "design/animations/upload-sequence.html": {
+    "mtime": 1790934056.0799575,
+    "seen": 1791295867.6303537,
+    "ast_hash": "a7135eeb647b0b58b6975ae947c30cf3",
+    "semantic_hash": "a7135eeb647b0b58b6975ae947c30cf3"
+  },
+  "design/prototype/notch-buddy.html": {
+    "mtime": 1790934056.1125548,
+    "seen": 1791295867.6303542,
+    "ast_hash": "25790c098ef4d213aa87a69676f9473a",
+    "semantic_hash": "25790c098ef4d213aa87a69676f9473a"
+  },
+  "docs/AGENTS.md": {
+    "mtime": 1790934056.1130583,
+    "seen": 1791295867.630355,
+    "ast_hash": "f1252a439428726460261b345e77fffd",
+    "semantic_hash": "f1252a439428726460261b345e77fffd"
+  },
+  "docs/INTEGRATIONS.md": {
+    "mtime": 1790934056.1136317,
+    "seen": 1791295867.630358,
+    "ast_hash": "8c197d35e2c2f020532079d281fb5924",
+    "semantic_hash": "8c197d35e2c2f020532079d281fb5924"
+  },
+  "docs/SKINS.md": {
+    "mtime": 1791274020.0364292,
+    "seen": 1791295867.6303587,
+    "ast_hash": "a1da520ac6e4818417a0b92b241b6665",
+    "semantic_hash": "a1da520ac6e4818417a0b92b241b6665"
+  },
+  "docs/SPEC.md": {
+    "mtime": 1790934056.1136317,
+    "seen": 1791295867.6303596,
+    "ast_hash": "91f5bd2140e33818be39b8d75d298759",
+    "semantic_hash": "91f5bd2140e33818be39b8d75d298759"
+  },
+  "docs/index.html": {
+    "mtime": 1790934056.1141782,
+    "seen": 1791295867.6303601,
+    "ast_hash": "b675d72d31800bd5ba744d2bd7736870",
+    "semantic_hash": "b675d72d31800bd5ba744d2bd7736870"
+  },
+  "windows/README.md": {
+    "mtime": 1791224225.8577135,
+    "seen": 1791295867.6303608,
+    "ast_hash": "d8ce547f0290f94b11e80bfa5835b154",
+    "semantic_hash": "d8ce547f0290f94b11e80bfa5835b154"
+  },
+  "windows/index.html": {
+    "mtime": 1791221124.6814463,
+    "seen": 1791295867.6303616,
+    "ast_hash": "5c5dd5237f6db2fb56666488c3cc37fd",
+    "semantic_hash": "5c5dd5237f6db2fb56666488c3cc37fd"
+  },
+  "NotchBuddy/Resources/sounds/annoyed.wav": {
+    "mtime": 1790934056.0295913,
+    "seen": 1791295867.6303625,
+    "ast_hash": "7a1b09f835de632ecedb8172f1ef6e5f",
+    "semantic_hash": "7a1b09f835de632ecedb8172f1ef6e5f"
+  },
+  "NotchBuddy/Resources/sounds/approval.wav": {
+    "mtime": 1790934056.0313525,
+    "seen": 1791295867.6303632,
+    "ast_hash": "bcf435da0124b24a239e7276cea722dc",
+    "semantic_hash": "bcf435da0124b24a239e7276cea722dc"
+  },
+  "NotchBuddy/Resources/sounds/approve.wav": {
+    "mtime": 1790934056.0332062,
+    "seen": 1791295867.630364,
+    "ast_hash": "62d2e9cd54e2dd74fb9b52e19f976eb1",
+    "semantic_hash": "62d2e9cd54e2dd74fb9b52e19f976eb1"
+  },
+  "NotchBuddy/Resources/sounds/attach.wav": {
+    "mtime": 1790934056.0349975,
+    "seen": 1791295867.6303644,
+    "ast_hash": "0a89913ec2ce3b45b2e7d86622dd9926",
+    "semantic_hash": "0a89913ec2ce3b45b2e7d86622dd9926"
+  },
+  "NotchBuddy/Resources/sounds/blip.wav": {
+    "mtime": 1790934056.0355465,
+    "seen": 1791295867.6303651,
+    "ast_hash": "812bb64a085cbbf3f412f6dab6b82a97",
+    "semantic_hash": "812bb64a085cbbf3f412f6dab6b82a97"
+  },
+  "NotchBuddy/Resources/sounds/close.wav": {
+    "mtime": 1790934056.0366206,
+    "seen": 1791295867.6303656,
+    "ast_hash": "60eafcd85dbe860dbf2f713199e3f178",
+    "semantic_hash": "60eafcd85dbe860dbf2f713199e3f178"
+  },
+  "NotchBuddy/Resources/sounds/dizzy.wav": {
+    "mtime": 1790934056.0387495,
+    "seen": 1791295867.6303668,
+    "ast_hash": "b1abeceb39e55fa4ed693667e08eb40a",
+    "semantic_hash": "b1abeceb39e55fa4ed693667e08eb40a"
+  },
+  "NotchBuddy/Resources/sounds/error.wav": {
+    "mtime": 1790934056.0398457,
+    "seen": 1791295867.6303673,
+    "ast_hash": "ca937a1ce9b64bff9b33508f69dc9d91",
+    "semantic_hash": "ca937a1ce9b64bff9b33508f69dc9d91"
+  },
+  "NotchBuddy/Resources/sounds/finish.wav": {
+    "mtime": 1790934056.0418513,
+    "seen": 1791295867.630368,
+    "ast_hash": "9078b4b6309629c39f9c6fc1bc0694e6",
+    "semantic_hash": "9078b4b6309629c39f9c6fc1bc0694e6"
+  },
+  "NotchBuddy/Resources/sounds/greet.wav": {
+    "mtime": 1790934056.0438511,
+    "seen": 1791295867.6303685,
+    "ast_hash": "45cd11a1cd4a92007e64475f475c4f1e",
+    "semantic_hash": "45cd11a1cd4a92007e64475f475c4f1e"
+  },
+  "NotchBuddy/Resources/sounds/gulp.wav": {
+    "mtime": 1790934056.0458503,
+    "seen": 1791295867.6303692,
+    "ast_hash": "862f1b872ebdaaada1ea7f1e98b11cf1",
+    "semantic_hash": "862f1b872ebdaaada1ea7f1e98b11cf1"
+  },
+  "NotchBuddy/Resources/sounds/hover.wav": {
+    "mtime": 1790934056.0458503,
+    "seen": 1791295867.6303701,
+    "ast_hash": "772fc1d020c78f51116315debd075308",
+    "semantic_hash": "772fc1d020c78f51116315debd075308"
+  },
+  "NotchBuddy/Resources/sounds/love.wav": {
+    "mtime": 1790934056.0478501,
+    "seen": 1791295867.6303709,
+    "ast_hash": "b0d1885ed59990a3bfe0c0f7349789cd",
+    "semantic_hash": "b0d1885ed59990a3bfe0c0f7349789cd"
+  },
+  "NotchBuddy/Resources/sounds/open.wav": {
+    "mtime": 1790934056.0483558,
+    "seen": 1791295867.6303713,
+    "ast_hash": "91bc6c48f9e87145775457623da398f3",
+    "semantic_hash": "91bc6c48f9e87145775457623da398f3"
+  },
+  "NotchBuddy/Resources/sounds/peek.wav": {
+    "mtime": 1790934056.0503626,
+    "seen": 1791295867.630372,
+    "ast_hash": "ef04c9bbd0374dcabe2cd0a8b21054f9",
+    "semantic_hash": "ef04c9bbd0374dcabe2cd0a8b21054f9"
+  },
+  "NotchBuddy/Resources/sounds/pop.wav": {
+    "mtime": 1790934056.0513625,
+    "seen": 1791295867.6303728,
+    "ast_hash": "7fbb980fb4bee3907c7b35063adfd343",
+    "semantic_hash": "7fbb980fb4bee3907c7b35063adfd343"
+  },
+  "NotchBuddy/Resources/sounds/proud.wav": {
+    "mtime": 1790934056.053362,
+    "seen": 1791295867.6303735,
+    "ast_hash": "ec7c64a9095a41c4a45347dc34245946",
+    "semantic_hash": "ec7c64a9095a41c4a45347dc34245946"
+  },
+  "NotchBuddy/Resources/sounds/question.wav": {
+    "mtime": 1790934056.0553603,
+    "seen": 1791295867.6303742,
+    "ast_hash": "6e88e70d75bc6bcf323aaf708dcdbad0",
+    "semantic_hash": "6e88e70d75bc6bcf323aaf708dcdbad0"
+  },
+  "NotchBuddy/Resources/sounds/rate.wav": {
+    "mtime": 1790934056.056363,
+    "seen": 1791295867.630375,
+    "ast_hash": "e12b4cf642952a91bf428a16f7207378",
+    "semantic_hash": "e12b4cf642952a91bf428a16f7207378"
+  },
+  "NotchBuddy/Resources/sounds/search.wav": {
+    "mtime": 1790934056.05787,
+    "seen": 1791295867.6303754,
+    "ast_hash": "b1c301ac6e7f1a92d9528c7d7dab3e38",
+    "semantic_hash": "b1c301ac6e7f1a92d9528c7d7dab3e38"
+  },
+  "NotchBuddy/Resources/sounds/send.wav": {
+    "mtime": 1790934056.0588768,
+    "seen": 1791295867.630376,
+    "ast_hash": "4d17613a4d123132e6d7580e678d2ff9",
+    "semantic_hash": "4d17613a4d123132e6d7580e678d2ff9"
+  },
+  "NotchBuddy/Resources/sounds/slap.wav": {
+    "mtime": 1790934056.0598829,
+    "seen": 1791295867.6303768,
+    "ast_hash": "c635be655822c5848e8421061282a4a4",
+    "semantic_hash": "c635be655822c5848e8421061282a4a4"
+  },
+  "NotchBuddy/Resources/sounds/sleep.wav": {
+    "mtime": 1790934056.0608819,
+    "seen": 1791295867.6303775,
+    "ast_hash": "03a55615bc73b14e490014935d8e78f3",
+    "semantic_hash": "03a55615bc73b14e490014935d8e78f3"
+  },
+  "NotchBuddy/Resources/sounds/think.wav": {
+    "mtime": 1790934056.0628824,
+    "seen": 1791295867.6303782,
+    "ast_hash": "0aef4c79728335ab827feeaa80f384aa",
+    "semantic_hash": "0aef4c79728335ab827feeaa80f384aa"
+  },
+  "NotchBuddy/Resources/sounds/tick.wav": {
+    "mtime": 1790934056.0628824,
+    "seen": 1791295867.630379,
+    "ast_hash": "02f4eb1c7cb662ca8e2d437de9f3aa55",
+    "semantic_hash": "02f4eb1c7cb662ca8e2d437de9f3aa55"
+  },
+  "NotchBuddy/Resources/sounds/wink.wav": {
+    "mtime": 1790934056.063882,
+    "seen": 1791295867.6303794,
+    "ast_hash": "e2fa95d241facc13c70c7e2bbac07da2",
+    "semantic_hash": "e2fa95d241facc13c70c7e2bbac07da2"
+  },
+  "NotchBuddy/Resources/sounds/work.wav": {
+    "mtime": 1790934056.063882,
+    "seen": 1791295867.6303804,
+    "ast_hash": "0d66aada45911f747911cf3588e09f2c",
+    "semantic_hash": "0d66aada45911f747911cf3588e09f2c"
+  },
+  "NotchBuddy/Resources/sounds/yawn.wav": {
+    "mtime": 1790934056.0662172,
+    "seen": 1791295867.630381,
+    "ast_hash": "c642f8fb19aea2577e965d71a663ca33",
+    "semantic_hash": "c642f8fb19aea2577e965d71a663ca33"
+  },
+  "docs/media/demo.mp4": {
+    "mtime": 1790934056.1595695,
+    "seen": 1791295867.6303818,
+    "ast_hash": "5e1fe677ae4685fc75c7bb93dd98abe2",
+    "semantic_hash": "5e1fe677ae4685fc75c7bb93dd98abe2"
+  }
+}

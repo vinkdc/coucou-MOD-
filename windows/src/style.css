@@ -23,9 +23,9 @@
   --dim-3: #6b7079;
   --dim-4: #5f646d;
   --dim-5: #4b5563;
-  --card: #141518;
-  --card-flat: #0e0f11;
-  --tab-on: #1d1f23;
+  --card: #070708;
+  --card-flat: #030304;
+  --tab-on: #121315;
   --hairline: rgba(255, 255, 255, 0.035);
   --red: #f4505e;
   --red-text: #ff8d97;
@@ -1363,7 +1363,7 @@ input[type="range"]::-webkit-slider-thumb {
   --chat-label-3: rgba(235, 235, 245, 0.3);
   --chat-separator: rgba(0, 0, 0, 0.32); /* a dark groove, never a light line */
   overflow: hidden;
-  background: #1c1c1e;
+  background: var(--card);
 }
 
 .chat-body {

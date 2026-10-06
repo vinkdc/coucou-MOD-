@@ -1,24 +1,14 @@
 {
-  "format": 1,
+  "format": 2,
   "id": "example",
   "name": "Example",
-  "author": "Coucou",
-  "note": "A flat-colour demo skin: the smallest thing that moves like a real one.",
+  "author": "Kotoba",
+  "note": "Flat-colour hair on Mochi: the smallest skin that moves like a real one.",
   "persona": "You are a cheerful little round character who answers briefly and warmly.",
   "size": {
     "w": 256,
     "h": 256
   },
-  "head": {
-    "cx": 128,
-    "cy": 130,
-    "r": 88
-  },
-  "chin": 205,
-  "tiltPivot": [
-    128,
-    205
-  ],
   "layers": [
     {
       "id": "tail",
@@ -27,15 +17,15 @@
       "behavior": {
         "type": "bend",
         "root": [
-          210,
-          90
+          206,
+          100
         ],
-        "tipY": 232,
+        "tipY": 222,
         "bounds": [
           180,
-          60,
+          70,
           250,
-          240
+          230
         ],
         "grid": [
           3,
@@ -45,9 +35,21 @@
       }
     },
     {
-      "id": "head",
-      "src": "head.png",
-      "role": "head"
+      "id": "back",
+      "src": "back.png",
+      "role": "back",
+      "parallax": 0.35
+    },
+    {
+      "id": "fringe",
+      "src": "fringe.png",
+      "role": "front"
+    },
+    {
+      "id": "glasses",
+      "src": "glasses.png",
+      "role": "top",
+      "parallax": 1
     },
     {
       "id": "bow",
@@ -56,8 +58,8 @@
       "behavior": {
         "type": "pivot",
         "pivot": [
-          193,
-          52
+          187,
+          40
         ],
         "spring": "hair",
         "rotate": 0.3,
@@ -69,45 +71,10 @@
       }
     }
   ],
-  "eyes": [
-    {
-      "cx": 98,
-      "cy": 135,
-      "x0": 79,
-      "x1": 117,
-      "top": 112,
-      "bottom": 158,
-      "sd": -1
-    },
-    {
-      "cx": 158,
-      "cy": 135,
-      "x0": 139,
-      "x1": 177,
-      "top": 112,
-      "bottom": 158,
-      "sd": 1
-    }
-  ],
-  "iris": {
-    "src": "iris.png",
-    "follow": 14
-  },
-  "lid": "rgb(255, 226, 205)",
-  "lash": "rgb(60, 36, 40)",
-  "cheeks": [
-    [
-      78,
-      170
-    ],
-    [
-      178,
-      170
-    ]
-  ],
-  "blush": {
-    "rx": 22,
-    "ry": 14,
-    "color": "rgb(255, 140, 155)"
+  "fit": {
+    "width": 68,
+    "height": 89,
+    "centerX": 128,
+    "eyeLine": 154
   }
 }

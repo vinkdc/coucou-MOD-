@@ -11,10 +11,9 @@ import {
 } from "../core/layout";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
-import { stop as stopVoice } from "../core/voice";
+import { level as voiceLevel, onVoiceChange, stop as stopVoice } from "../core/voice";
 import { BotEngine } from "../mochi/engine";
 import { RibbonSkin } from "../mochi/skin";
-import { loadLocalSkin, localSkinNames } from "../mochi/localSkins";
 import { bundleId, loadBundle } from "../mochi/bundles";
 import { askInChat } from "../views/chat";
 import { binding, comboFromEvent, isBare } from "../core/keys";
@@ -99,6 +98,11 @@ export class Island {
   // ── DOM ─────────────────────────────────────────────────────────────────────
 
   private build() {
+    // Mochi pulses with its voice while it plays.
+    onVoiceChange((key) => {
+      this.engine.speaking = key !== null;
+      this.ensureRunning();
+    });
     const actions: ViewActions = {
       setView: (v) => this.setView(v),
       collapse: () => this.collapse(),
@@ -209,7 +213,15 @@ export class Island {
     const prev = State.mode;
     if (mode === prev) return;
     State.mode = mode;
-    if (mode === "expanded") Sound.play("open");
+    if (mode === "expanded") {
+      Sound.play("open");
+      // Opened by pointing at it: the arrow keys are meant for the island, not
+      // for the app underneath (a video, an editor). Closing hands them back.
+      if (this.wasInIsland) {
+        this.userFocused = true;
+        void Bridge.focusWindow(true);
+      }
+    }
     if (prev === "expanded") {
       Sound.play("close");
       State.isPinned = false;
@@ -266,7 +278,9 @@ export class Island {
     const order = Island.TAB_ORDER;
     const next = order[(this.tabIndex() + delta + order.length) % order.length];
     Sound.play("blip");
-    if (next === "review") this.openReview(5, false, false);
+    // Passing back through Review keeps the session in progress; only a missing
+    // or finished one starts afresh.
+    if (next === "review" && (!State.review || State.review.done)) this.openReview(5, false, false);
     else this.setView(next);
   }
 
@@ -458,6 +472,8 @@ export class Island {
       } else if (combo && (combo === binding(keys, "tab.prev") || combo === binding(keys, "tab.next"))) {
         if (this.tabKeyApplies(e, combo)) {
           e.preventDefault();
+          // A held key would race through every tab and queue resize animations.
+          if (e.repeat) return;
           this.stepTab(combo === binding(keys, "tab.next") ? 1 : -1);
         }
       }
@@ -466,10 +482,16 @@ export class Island {
 
     // A click inside the island is deliberate: from then on it takes the keyboard
     // until it closes. Surfacing on its own never takes focus.
-    window.addEventListener("pointerdown", () => {
+    const takeKeyboard = () => {
       if (State.mode !== "expanded") return;
       this.userFocused = true;
       if (!document.hasFocus()) void Bridge.focusWindow(true);
+    };
+    window.addEventListener("pointerdown", takeKeyboard);
+    // Moving the mouse over the open island is deliberate too: without this the
+    // arrow keys did nothing until the first click.
+    window.addEventListener("pointermove", () => {
+      if (!this.userFocused) takeKeyboard();
     });
 
     // Outside Tauri (plain browser) drive the cursor from DOM events so the
@@ -727,6 +749,7 @@ export class Island {
     if (!ctx) return;
 
     this.engine.bodyColor = null;
+    this.engine.voiceLevel = this.engine.speaking ? voiceLevel() : -1;
     this.engine.particleOverhang = BOT_OVERHANG;
     this.engine.lookX = this.lookX();
     this.engine.lookY = this.lookY();
@@ -790,14 +813,21 @@ export class Island {
     // Only the views with a text field (the chat, the study panel) may take the
     // keyboard; surfacing on its own never steals it.
     const takesKeyboard = (v: IslandViewName | null) => v === "prompt";
-    if (this.lastSyncedView !== State.view) {
+    // A closed island shows no view, so reopening on the same chat counts as
+    // arriving at it again and puts the cursor in the field.
+    const shownView = expanded ? State.view : null;
+    if (this.lastSyncedView !== shownView) {
       const wasChat = takesKeyboard(this.lastSyncedView);
-      this.lastSyncedView = State.view;
-      if (takesKeyboard(State.view)) {
+      this.lastSyncedView = shownView;
+      if (shownView && takesKeyboard(shownView)) {
         void Bridge.focusWindow(true);
-        const shown = State.view;
-        window.setTimeout(() => this.views.get(shown)?.focus?.(), 120);
-      } else if (wasChat && !this.userFocused) {
+        const shown = shownView;
+        window.setTimeout(() => {
+          // If the other app still holds the keyboard, ask once more before focusing the field.
+          if (!document.hasFocus()) void Bridge.focusWindow(true);
+          window.setTimeout(() => this.views.get(shown)?.focus?.(), 60);
+        }, 120);
+      } else if (wasChat && expanded && !this.userFocused) {
         void Bridge.focusWindow(false);
       }
     }
@@ -819,13 +849,8 @@ export class Island {
         if (this.skinName === name) this.engine.skin = skin;
         this.ensureRunning();
       });
-    } else if (name === "mochi" || !localSkinNames().includes(name)) {
-      this.engine.skin = null;
     } else {
-      void loadLocalSkin(name).then((skin) => {
-        if (this.skinName === name) this.engine.skin = skin;
-        this.ensureRunning();
-      });
+      this.engine.skin = null;
     }
     this.ensureRunning();
   }

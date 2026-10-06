@@ -105,8 +105,10 @@ pub fn vet(files: Vec<(String, Vec<u8>)>) -> Result<Bundle, String> {
         serde_json::from_slice(&manifest).map_err(|e| format!("manifest.json is not valid: {e}"))?;
     let text = |key: &str| json.get(key).and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
 
-    if json.get("format").and_then(|v| v.as_u64()) != Some(1) {
-        return Err("this bundle needs a newer Coucou (manifest format is not 1)".into());
+    match json.get("format").and_then(|v| v.as_u64()) {
+        Some(2) => {}
+        Some(1) => return Err("this skin was made for the old full-figure format; make it again in the skin editor".into()),
+        _ => return Err("this bundle needs a newer Kotoba (manifest format is not 2)".into()),
     }
     let id = text("id");
     if !valid_id(&id) || RESERVED.contains(&id.as_str()) {
@@ -121,7 +123,7 @@ pub fn vet(files: Vec<(String, Vec<u8>)>) -> Result<Bundle, String> {
         return Err(format!("the persona is longer than {MAX_PERSONA} characters"));
     }
     // Every picture the manifest names has to be in the bundle.
-    let mut wanted: Vec<&str> = json
+    let wanted: Vec<&str> = json
         .get("layers")
         .and_then(|v| v.as_array())
         .ok_or("the manifest has no layers")?
@@ -130,16 +132,6 @@ pub fn vet(files: Vec<(String, Vec<u8>)>) -> Result<Bundle, String> {
         .collect();
     if wanted.is_empty() {
         return Err("the manifest has no layers".into());
-    }
-    if let Some(iris) = json.get("iris").and_then(|i| i.get("src")).and_then(|s| s.as_str()) {
-        wanted.push(iris);
-    }
-    // Expression pictures (happy, closed, …) are layers too.
-    if let Some(map) = json.get("expressions").and_then(|e| e.as_object()) {
-        if map.len() > 16 {
-            return Err("too many expressions".into());
-        }
-        wanted.extend(map.values().filter_map(|v| v.as_str()));
     }
     for src in wanted {
         if !layers.iter().any(|(n, _)| n == src) {
@@ -399,7 +391,7 @@ mod tests {
     }
 
     fn manifest(extra: &str) -> Vec<u8> {
-        format!(r#"{{"format":1,"id":"demo","name":"Demo","layers":[{{"id":"head","src":"head.png"}}]{extra}}}"#).into_bytes()
+        format!(r#"{{"format":2,"id":"demo","name":"Demo","layers":[{{"id":"head","src":"head.png"}}]{extra}}}"#).into_bytes()
     }
 
     fn good() -> Vec<(String, Vec<u8>)> {
@@ -411,6 +403,13 @@ mod tests {
         let b = vet(good()).unwrap();
         assert_eq!((b.info.id.as_str(), b.info.name.as_str()), ("demo", "Demo"));
         assert_eq!(b.layers.len(), 1);
+    }
+
+    #[test]
+    fn refuses_the_old_full_figure_format() {
+        let m = br#"{"format":1,"id":"old","name":"Old","layers":[{"src":"head.png"}]}"#.to_vec();
+        let err = vet(vec![("manifest.json".into(), m), ("head.png".into(), png(8, 8))]).err().unwrap();
+        assert!(err.contains("old full-figure format"), "{err}");
     }
 
     #[test]
@@ -443,7 +442,7 @@ mod tests {
         assert!(vet(f).is_err());
         // Bad ids, and the built-in names.
         for id in ["Demo", "mochi", "ribbon", "a b", ""] {
-            let m = format!(r#"{{"format":1,"id":"{id}","name":"x","layers":[{{"src":"head.png"}}]}}"#);
+            let m = format!(r#"{{"format":2,"id":"{id}","name":"x","layers":[{{"src":"head.png"}}]}}"#);
             assert!(vet(vec![("manifest.json".into(), m.into_bytes()), ("head.png".into(), png(8, 8))]).is_err(), "{id}");
         }
         let long = "x".repeat(MAX_PERSONA + 1);

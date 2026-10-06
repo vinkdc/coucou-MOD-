@@ -6,11 +6,13 @@
 mod assistant;
 mod claude;
 mod fishaudio;
+mod deepseek;
 mod gemini;
 mod hotkey;
 mod island;
 mod learner;
 mod log;
+mod pc;
 mod platform;
 mod secrets;
 mod settings;
@@ -179,10 +181,14 @@ fn idle_ms() -> u64 {
 #[tauri::command]
 fn focus_window(app: AppHandle, focused: bool) {
     let Some(win) = island::window(&app) else { return };
-    platform::set_activating(&win, focused);
     if focused {
+        platform::set_activating(&win, true);
         platform::force_foreground(&win);
         let _ = win.set_focus();
+    } else {
+        // Hand the keyboard back while the island still owns it, then lock it again.
+        platform::restore_foreground(&win);
+        platform::set_activating(&win, false);
     }
 }
 
@@ -232,8 +238,10 @@ async fn chat_send(
         let model = match provider {
             assistant::Provider::Claude => s.model.clone(),
             assistant::Provider::Gemini => s.gemini_model.clone(),
+            assistant::Provider::DeepSeek => s.deepseek_model.clone(),
         };
-        (provider, model, tutor::Prefs { english: s.english_support.clone(), user_name: s.user_name.clone() })
+        let pc_tools = s.pc_tools && which != "lookup";
+        (provider, model, tutor::Prefs { english: s.english_support.clone(), user_name: s.user_name.clone(), pc_tools })
     };
     // A lookup is not a conversation: it neither counts as study minutes nor
     // remembers earlier lookups.
@@ -261,8 +269,17 @@ async fn chat_send(
         tutor::system_prompt(mode, &l, &prefs)
     };
     // A lookup only explains: it logs nothing, so it gets no tools.
-    let defs = if which == "lookup" { Vec::new() } else { tutor::tools() };
+    let mut defs = if which == "lookup" { Vec::new() } else { tutor::tools() };
+    // The PC tools only when the user allowed them, and never for a lookup (its
+    // text comes from another app and must not be able to trigger anything).
+    let pc_tools = prefs.pc_tools;
+    if pc_tools {
+        defs.extend(pc::tools());
+    }
     let exec = |call: &assistant::ToolCall| {
+        if pc_tools && pc::handles(&call.name) {
+            return pc::apply(call);
+        }
         let mut l = progress.learner.lock().unwrap();
         tutor::apply(&mut l, call, &today)
     };
@@ -383,6 +400,13 @@ async fn speech_transcribe(request: tauri::ipc::Request<'_>) -> Result<String, S
 async fn gemini_models() -> Result<Vec<gemini::ModelInfo>, String> {
     let key = secrets::get("gemini-api-key").ok_or_else(|| "No Gemini key yet.".to_string())?;
     gemini::models(&key).await
+}
+
+/// The DeepSeek models the stored key can use, for the Settings picker.
+#[tauri::command]
+async fn deepseek_models() -> Result<Vec<deepseek::ModelInfo>, String> {
+    let key = secrets::get("deepseek-api-key").ok_or_else(|| "No DeepSeek key yet.".to_string())?;
+    deepseek::models(&key).await
 }
 
 // ── Voice ─────────────────────────────────────────────────────────────────────
@@ -656,6 +680,7 @@ pub fn run() {
             speech_transcribe,
             speaking_log,
             gemini_models,
+            deepseek_models,
             tts_speak,
             fish_voices,
             skins_list,
