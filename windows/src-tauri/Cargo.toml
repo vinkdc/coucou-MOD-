@@ -26,6 +26,8 @@ tauri-plugin-global-shortcut = "2"
 # Reads imported character skins (.zip). Deflate only: no encryption, no bzip2.
 zip = { version = "2", default-features = false, features = ["deflate"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
+sha2 = "0.10"
+getrandom = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 # The same crate wry drives WebView2 with, to let it accept dropped files.
@@ -33,6 +35,8 @@ webview2-com = "0.39"
 windows-core = "0.62"
 keyring = { version = "3", features = ["windows-native"] }
 windows = { version = "0.61", features = [
+  "Foundation",
+  "Media_Control",
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_Security",

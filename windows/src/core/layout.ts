@@ -61,7 +61,7 @@ export const EXPANDED_CORNER = 22;
 
 export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   // Mochi on the left; today at a glance and the ways in on the right.
-  home: { height: 176, botX: 70, botY: null, botDiameter: 62 },
+  home: { height: 196, botX: 70, botY: null, botDiameter: 62 },
   nudge: { height: 160, botX: 66, botY: null, botDiameter: 60 },
   confused: { height: 160, botX: 76, botY: null, botDiameter: 66 },
   prompt: { height: 160, botX: 52, botY: null, botDiameter: 44 },

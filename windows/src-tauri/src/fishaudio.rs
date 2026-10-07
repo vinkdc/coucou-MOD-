@@ -318,12 +318,11 @@ pub async fn transcribe(audio: &[u8], mime: &str, language: &str) -> Result<Stri
     }
     let key = key()?;
     let boundary = format!("kotoba{:016x}", fnv1a(&audio[..audio.len().min(4096)]) ^ audio.len() as u64);
-    let body = multipart(
-        &boundary,
-        audio,
-        mime,
-        &[("language", language), ("ignore_timestamps", "true"), ("tag_audio_events", "false")],
-    );
+    let mut fields = vec![("ignore_timestamps", "true"), ("tag_audio_events", "false")];
+    if !language.is_empty() {
+        fields.push(("language", language));
+    }
+    let body = multipart(&boundary, audio, mime, &fields);
     let response = client()?
         .post(format!("{BASE}/v1/asr"))
         .bearer_auth(key)
@@ -336,6 +335,10 @@ pub async fn transcribe(audio: &[u8], mime: &str, language: &str) -> Result<Stri
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
     if !status.is_success() {
+        // Speech recognition has no free model, so the TTS advice in `explain` would mislead.
+        if status.as_u16() == 402 {
+            return Err("Fish Audio speech recognition has no credit on this key. Add credit on fish.audio; it has no free model.".into());
+        }
         return Err(explain(status.as_u16(), &text));
     }
     let v: Value = serde_json::from_str(&text).map_err(|_| "Fish Audio sent back something unexpected.".to_string())?;

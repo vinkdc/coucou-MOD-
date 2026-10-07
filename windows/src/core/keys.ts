@@ -23,6 +23,7 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
   },
   { id: "tab.next", scope: "island", what: "Next tab (Today, Ask, Review, Progress)", default: "Right" },
   { id: "chat.send", scope: "island", what: "Send your message in the chat", default: "Enter" },
+  { id: "chat.voice", scope: "island", what: "Start or stop voice chat in the chat", default: "Ctrl+M" },
   { id: "editor.undo", scope: "editor", what: "Undo", default: "Ctrl+Z" },
   { id: "editor.redo", scope: "editor", what: "Redo", default: "Ctrl+Y", note: "Ctrl+Shift+Z always redoes too." },
   { id: "editor.cancel", scope: "editor", what: "Stop picking a colour from the picture", default: "Esc" },

@@ -6,6 +6,14 @@ import { Bridge, IS_TAURI } from "./bridge";
 
 const urls = new Map<string, string>();
 let audio: HTMLAudioElement | null = null;
+/** 0..1, from the Sound volume slider (0.12 by default maps to 0.6, a comfortable speaking level). */
+let voiceVolume = 0.6;
+
+/** Sets how loud speech is, from the same 0..0.2 slider as the effects. */
+export function setVoiceVolume(sliderValue: number) {
+  voiceVolume = Math.max(0, Math.min(1, sliderValue / 0.2));
+  if (audio) audio.volume = voiceVolume;
+}
 let playingKey: string | null = null;
 /** Bumped by every speak/stop, so a slow fetch or an old queue never plays over newer audio. */
 let generation = 0;
@@ -15,6 +23,7 @@ const listeners = new Set<(key: string | null) => void>();
 // first clip, and only when the audio context is running: routing the element
 // through a suspended context would silence it.
 let analyser: AnalyserNode | null = null;
+let leveller: GainNode | null = null;
 let context: AudioContext | null = null;
 const samples = new Uint8Array(512);
 
@@ -31,25 +40,61 @@ async function listen(a: HTMLAudioElement) {
     const node = context.createAnalyser();
     node.fftSize = samples.length;
     node.smoothingTimeConstant = 0.3;
+    const gain = context.createGain();
     source.connect(node);
-    node.connect(context.destination);
+    node.connect(gain);
+    gain.connect(context.destination);
     analyser = node;
+    leveller = gain;
   } catch {
     analyser = null;
   }
 }
 
-/** Loudness of the voice right now, 0..1; -1 when it can't be measured. */
-export function level(): number {
-  if (!analyser) return -1;
+/** The loudest recent speech, slowly forgotten: the yardstick that makes a quiet voice pulse as much as a loud one. */
+let peak = 0.08;
+let smooth = 0;
+/** Smoothed loudness of what is playing, the input to the automatic volume. */
+let envelope = 0;
+let raf = 0;
+
+/** Speech is brought to this loudness (RMS), so a short word and a long reply sound equally loud. */
+const TARGET_RMS = 0.1;
+
+/** One frame of listening: the pulse, and the gain that keeps every clip at the same loudness. */
+function measure() {
+  if (!analyser) return;
   analyser.getByteTimeDomainData(samples);
   let sum = 0;
   for (const v of samples) sum += ((v - 128) / 128) ** 2;
-  return Math.min(1, Math.sqrt(sum / samples.length) * 4);
+  const rms = Math.sqrt(sum / samples.length);
+
+  peak = Math.max(rms, peak * 0.996, 0.04);
+  const now = Math.min(1, rms / peak);
+  // Quick to rise, slower to fall, so each syllable reads as one beat.
+  smooth += (now - smooth) * (now > smooth ? 0.6 : 0.2);
+
+  // Automatic volume: fast to follow a louder clip down, slow to let go in the pauses between words.
+  envelope += (rms - envelope) * (rms > envelope ? 0.5 : 0.03);
+  if (leveller && envelope > 0.008) {
+    const want = Math.max(0.4, Math.min(3, TARGET_RMS / envelope));
+    leveller.gain.value += (want - leveller.gain.value) * 0.15;
+  }
+}
+
+function loop() {
+  measure();
+  raf = playingKey !== null ? requestAnimationFrame(loop) : 0;
+}
+
+/** Loudness of the voice right now, 0..1 relative to how loud it has been; -1 when it can't be measured. */
+export function level(): number {
+  return analyser ? smooth : -1;
 }
 
 function setPlaying(key: string | null) {
   playingKey = key;
+  if (key !== null && !raf) raf = requestAnimationFrame(loop);
   for (const fn of listeners) fn(key);
 }
 
@@ -181,6 +226,7 @@ async function playUrl(pending: Promise<Source>, key: string, gen: number): Prom
   }
   audio ??= new Audio();
   const a = audio;
+  a.volume = voiceVolume;
   await listen(a);
   if (gen !== generation) return;
   a.src = typeof src === "string" ? src : (src.url ?? live(src));

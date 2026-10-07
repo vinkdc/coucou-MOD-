@@ -7,8 +7,11 @@ use std::sync::atomic::{AtomicIsize, Ordering};
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 
-use ::windows::core::BOOL;
-use ::windows::Win32::Foundation::{HWND, LPARAM, POINT};
+use ::windows::core::{BOOL, PWSTR};
+use ::windows::Win32::Foundation::{CloseHandle, HANDLE, HLOCAL, HWND, LPARAM, LocalFree, POINT};
+use ::windows::Win32::Security::Authorization::ConvertSidToStringSidW;
+use ::windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER};
+use ::windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use ::windows::Win32::System::Ole::RevokeDragDrop;
 use ::windows::Win32::System::SystemInformation::GetLocalTime;
 use ::windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
@@ -19,6 +22,45 @@ use ::windows::Win32::UI::WindowsAndMessaging::{
 
 use super::LocalTime;
 use crate::island::WINDOW_LABEL;
+
+/// File name of the Claude Code relay.
+pub const HOOK_EXE: &str = "kotoba-hook.exe";
+
+/// The current user's SID as text: it names the relay pipe so two accounts never meet on one.
+pub fn current_user_sid() -> Option<String> {
+    unsafe {
+        let mut token = HANDLE::default();
+        OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).ok()?;
+
+        // First call sizes the buffer, second fills it.
+        let mut needed = 0u32;
+        let _ = GetTokenInformation(token, TokenUser, None, 0, &mut needed);
+        if needed == 0 {
+            let _ = CloseHandle(token);
+            return None;
+        }
+        let mut buf = vec![0u8; needed as usize];
+        let ok = GetTokenInformation(
+            token,
+            TokenUser,
+            Some(buf.as_mut_ptr().cast()),
+            needed,
+            &mut needed,
+        )
+        .is_ok();
+        let _ = CloseHandle(token);
+        if !ok {
+            return None;
+        }
+
+        let user = &*(buf.as_ptr() as *const TOKEN_USER);
+        let mut text = PWSTR::null();
+        ConvertSidToStringSidW(user.User.Sid, &mut text).ok()?;
+        let sid = text.to_string().ok();
+        let _ = LocalFree(Some(HLOCAL(text.0 as *mut _)));
+        sid
+    }
+}
 
 /// Environment variable holding the home directory.
 #[allow(dead_code)]
@@ -450,6 +492,35 @@ pub fn paste_text(text: &str) -> Result<(), String> {
         crate::log::line("clipboard: could not restore every format after replacing a selection");
     }
     Ok(())
+}
+
+/// The text selected in the app in front, by copying it: the whole clipboard is backed up
+/// first and put back afterwards, so the user's own clipboard (a picture, files…) is
+/// untouched. Only for apps whose accessibility reports the wrong selection (some PDF
+/// viewers). Nothing is touched if the clipboard can't be backed up faithfully.
+pub fn copy_selection() -> Result<String, String> {
+    use ::windows::Win32::System::DataExchange::GetClipboardSequenceNumber;
+
+    let backup = snapshot_clipboard()?;
+    // SAFETY: no arguments.
+    let before = unsafe { GetClipboardSequenceNumber() };
+    send_ctrl(0x43); // C
+    let mut after = before;
+    for _ in 0..20 {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        // SAFETY: no arguments.
+        after = unsafe { GetClipboardSequenceNumber() };
+        if after != before {
+            break;
+        }
+    }
+    let copied = if after != before { clipboard_text() } else { None };
+    // Unless the user copied something themselves in the meantime, everything goes back.
+    // SAFETY: no arguments.
+    if after != before && unsafe { GetClipboardSequenceNumber() } == after {
+        restore_clipboard(&backup);
+    }
+    copied.ok_or_else(|| "Nothing was copied.".to_string())
 }
 
 // ── Island window ─────────────────────────────────────────────────────────────

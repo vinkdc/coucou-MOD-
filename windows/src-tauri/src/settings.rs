@@ -30,6 +30,8 @@ pub struct Settings {
     pub gemini_model: String,
     /// DeepSeek model id; empty = the first "flash" model the key can use.
     pub deepseek_model: String,
+    /// The island's look: "dark" (default), "light" or "auto" (follows Windows).
+    pub theme: String,
     /// The character's look: "mochi" (default) or an imported skin.
     pub skin: String,
     /// What the tutor calls the learner. Empty = never named.
@@ -98,6 +100,7 @@ impl Default for Settings {
             provider: "claude".into(),
             gemini_model: String::new(),
             deepseek_model: String::new(),
+            theme: "dark".into(),
             skin: "mochi".into(),
             user_name: String::new(),
             keys: std::collections::HashMap::new(),
@@ -126,6 +129,11 @@ impl Default for Settings {
 }
 
 pub use crate::platform::{config_dir, local_dir};
+
+/// Where the Claude Code relay lives once installed: a fixed path settings.json can point at.
+pub fn hook_exe_path() -> std::path::PathBuf {
+    local_dir().join("bin").join(crate::platform::HOOK_EXE)
+}
 
 fn settings_path() -> PathBuf {
     config_dir().join("settings.json")

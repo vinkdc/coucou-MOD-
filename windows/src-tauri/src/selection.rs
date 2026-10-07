@@ -111,7 +111,8 @@ mod imp {
     use ::windows::Win32::UI::Accessibility::{
         CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTextPattern, UIA_TextPatternId,
     };
-    use ::windows::Win32::UI::Accessibility::{IUIAutomationValuePattern, UIA_EditControlTypeId, UIA_IsReadOnlyAttributeId, UIA_ValuePatternId};
+    use ::windows::Win32::System::Ole::{SafeArrayAccessData, SafeArrayDestroy, SafeArrayGetLBound, SafeArrayGetUBound, SafeArrayUnaccessData};
+    use ::windows::Win32::UI::Accessibility::{IUIAutomationTextRange, IUIAutomationValuePattern, UIA_EditControlTypeId, UIA_IsReadOnlyAttributeId, UIA_ValuePatternId};
     use ::windows::Win32::UI::Input::KeyboardAndMouse::{GetDoubleClickTime, GetKeyState, VK_SHIFT};
     use ::windows::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, GetForegroundWindow, GetMessageW, PostThreadMessageW, SetForegroundWindow, SetWindowsHookExW,
@@ -302,8 +303,7 @@ mod imp {
                     if !select || shown.is_some_and(|(_, r)| inside(&r, at)) {
                         continue;
                     }
-                    std::thread::sleep(SETTLE);
-                    match read_selection(&uia, at) {
+                    match settled_selection(&uia, at) {
                         Some(picked) if !crate::platform::fullscreen_active() => {
                             crate::log::line(format!(
                                 "selection popup: {} characters selected{}",
@@ -324,6 +324,24 @@ mod imp {
                 }
             }
         }
+    }
+
+    /// Some apps (PDF and slide viewers) update the selection they report a little after
+    /// the mouse is released, so the first read can still be the previous selection. Read
+    /// again until two reads in a row agree, up to about a second.
+    fn settled_selection(uia: &IUIAutomation, at: POINT) -> Option<Picked> {
+        std::thread::sleep(SETTLE);
+        let mut last = read_selection(uia, at);
+        for _ in 0..5 {
+            std::thread::sleep(Duration::from_millis(150));
+            let now = read_selection(uia, at);
+            let same = last.as_ref().map(|p| &p.text) == now.as_ref().map(|p| &p.text);
+            last = now;
+            if same {
+                break;
+            }
+        }
+        last
     }
 
     fn inside(r: &RECT, p: POINT) -> bool {
@@ -388,6 +406,36 @@ mod imp {
         DEFAULT_IGNORED.contains(&name.as_str()) || EXTRA_IGNORED.lock().unwrap().contains(&name)
     }
 
+    /// Whether a text range is on screen where the mouse was let go: Some(true/false), or
+    /// None when the app reports no geometry for it. Some viewers report a selection from
+    /// elsewhere in the document; the geometry gives that away.
+    fn range_near(range: &IUIAutomationTextRange, at: POINT) -> Option<bool> {
+        // How far from the text the release may be: a drag can end past the line's end.
+        const SLACK_X: f64 = 90.0;
+        const SLACK_Y: f64 = 30.0;
+        // SAFETY: the SAFEARRAY is read between Access and Unaccess, then destroyed; it holds f64 (x, y, w, h) quadruples.
+        unsafe {
+            let psa = range.GetBoundingRectangles().ok()?;
+            if psa.is_null() {
+                return None;
+            }
+            let (lo, hi) = (SafeArrayGetLBound(psa, 1).ok()?, SafeArrayGetUBound(psa, 1).ok()?);
+            let count = (hi - lo + 1).max(0) as usize;
+            let mut data: *mut std::ffi::c_void = std::ptr::null_mut();
+            let mut near = None;
+            if count >= 4 && SafeArrayAccessData(psa, &mut data).is_ok() && !data.is_null() {
+                let values = std::slice::from_raw_parts(data as *const f64, count);
+                let (px, py) = (f64::from(at.x), f64::from(at.y));
+                near = Some(values.chunks_exact(4).any(|r| {
+                    px >= r[0] - SLACK_X && px <= r[0] + r[2] + SLACK_X && py >= r[1] - SLACK_Y && py <= r[1] + r[3] + SLACK_Y
+                }));
+                let _ = SafeArrayUnaccessData(psa);
+            }
+            let _ = SafeArrayDestroy(psa);
+            near
+        }
+    }
+
     /// The text selected where the user just let go of the mouse, or None: nothing
     /// selected, an app that exposes no text, a password field, an ignored app.
     fn read_selection(uia: &IUIAutomation, at: POINT) -> Option<Picked> {
@@ -427,6 +475,7 @@ mod imp {
                 }
                 let mut text = String::new();
                 let mut read_only = true;
+                let mut on_target = true;
                 for i in 0..ranges.Length().unwrap_or(0).min(3) {
                     if let Ok(r) = ranges.GetElement(i) {
                         if let Ok(t) = r.GetText(2000) {
@@ -435,6 +484,7 @@ mod imp {
                         }
                         // A range of editable text says so; a mixed or unknown answer counts as read-only.
                         if i == 0 {
+                            on_target = range_near(&r, at).unwrap_or(true);
                             read_only = r
                                 .GetAttributeValue(UIA_IsReadOnlyAttributeId)
                                 .ok()
@@ -442,6 +492,12 @@ mod imp {
                                 .unwrap_or(true);
                         }
                     }
+                }
+                if !on_target {
+                    // This app reports a selection from somewhere else (some PDF viewers do):
+                    // don't trust it, and copy what is really selected instead.
+                    crate::log::line("selection popup: the reported selection is not where the mouse was; copying instead");
+                    return crate::platform::copy_selection().ok().and_then(|t| clean(&t)).map(|text| Picked { text, editable: false });
                 }
                 // Chat boxes and fields: an edit control, or text its own app calls editable.
                 let typeable = el.CurrentControlType().map(|t| t == UIA_EditControlTypeId).unwrap_or(false)

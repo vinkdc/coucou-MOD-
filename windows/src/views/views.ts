@@ -7,6 +7,7 @@ import { icon } from "./phosphor";
 import { State } from "../core/state";
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
 import { buildPrompt } from "./chat";
+import { buildToday } from "./today";
 import { buildLookup } from "./lookup";
 import { buildStudyHost } from "./study";
 import { buildSession } from "../study/cards";
@@ -65,10 +66,10 @@ function btn(label: string, kind: "primary" | "secondary", onClick: () => void):
 // ── Header ────────────────────────────────────────────────────────────────────
 
 export function buildHeader(actions: ViewActions): ViewHost {
-  const tabHome = h("button", { class: "tab", title: "Today", onclick: () => go("home") }, icon("house", 13), h("span", { text: "Today" }));
-  const tabChat = h("button", { class: "tab", title: "Ask Mochi", onclick: () => go("prompt") }, icon("chat-circle", 13), h("span", { text: "Ask" }));
-  const tabReview = h("button", { class: "tab", title: "Review due words", onclick: () => { actions.blip(); actions.startReview(5, false, false); } }, icon("cards", 13), h("span", { text: "Review" }));
-  const tabProgress = h("button", { class: "tab", title: "Your progress", onclick: () => go("stats") }, icon("chart-bar", 13), h("span", { text: "Progress" }));
+  const tabHome = h("button", { class: "tab", title: "Today", onclick: () => go("home") }, h("span", { text: "Today" }));
+  const tabChat = h("button", { class: "tab", title: "Ask Mochi", onclick: () => go("prompt") }, h("span", { text: "Ask" }));
+  const tabReview = h("button", { class: "tab", title: "Review due words", onclick: () => { actions.blip(); actions.startReview(5, false, false); } }, h("span", { text: "Review" }));
+  const tabProgress = h("button", { class: "tab", title: "Your progress", onclick: () => go("stats") }, h("span", { text: "Progress" }));
 
   const gearBtn = h("button", { title: "Settings", onclick: () => go("settings") }, svg(ICONS.hdrGear, 15, { viewBox: 256 }));
   const soundBtn = h("button", { title: "Mute", onclick: () => actions.toggleSound() }, svg(ICONS.hdrSound, 15, { viewBox: 256 }));
@@ -91,6 +92,7 @@ export function buildHeader(actions: ViewActions): ViewHost {
     sync() {
       const v = State.view;
       tabHome.classList.toggle("on", v === "home" || v === "nudge" || v === "lookup");
+      tabHome.classList.toggle("fresh", State.agentsWaiting > 0 && v !== "home");
       tabChat.classList.toggle("on", v === "prompt");
       tabReview.classList.toggle("on", v === "review");
       tabProgress.classList.toggle("on", v === "stats" || v === "study");
@@ -104,67 +106,6 @@ export function buildHeader(actions: ViewActions): ViewHost {
       sizeBtn.title = v === "prompt" ? (big ? "Shrink chat" : "Expand chat") : big ? "Back to the summary" : "See all stats";
       sizeBtn.classList.toggle("on", big);
       el.style.opacity = v === "confused" ? "0" : "1";
-    },
-  };
-}
-
-// ── Home: today at a glance ───────────────────────────────────────────────────
-
-/** Quick questions offered on Home. */
-const QUICK_ASKS = [
-  { label: "How do I say…", prompt: "" },
-  { label: "Word of the day", prompt: "Teach me one useful Japanese word for today, with an example sentence." },
-  { label: "Quiz me", prompt: "Quiz me with ONE quick question on a word I know or am learning. Ask it in the tagged format and do not give the answer. My next message is my answer." },
-];
-
-function buildHome(actions: ViewActions): ViewHost {
-  const title = h("div", { class: "title" });
-  const sub = h("div", { class: "sub" });
-  const meter = h("i", { class: "goal-fill" });
-  const goal = h("div", { class: "goal" }, h("div", { class: "goal-track" }, meter));
-  const chips = h("div", { class: "quick-chips" });
-  const dueChip = h("button", {
-    class: "quick-chip due",
-    onclick: () => {
-      actions.blip();
-      actions.startReview(5, false, false);
-    },
-  });
-  chips.append(dueChip);
-  for (const q of QUICK_ASKS) {
-    chips.append(
-      h("button", {
-        class: "quick-chip",
-        text: q.label,
-        onclick: () => {
-          actions.blip();
-          if (q.prompt) actions.ask(q.prompt);
-          else actions.setView("prompt");
-        },
-      }),
-    );
-  }
-  const body = h(
-    "div",
-    { class: "stack home-stack", style: "padding:12px 16px 12px 128px" },
-    h("div", { class: "home-row" }, h("div", { class: "home-text" }, title, sub), btn("Talk", "primary", () => actions.setView("prompt"))),
-    goal,
-    chips,
-  );
-  return {
-    el: h("div", { class: "view" }, card(null, body)),
-    sync() {
-      const st = State.stats;
-      const goalMin = Math.max(1, State.settings.dailyGoalMinutes);
-      const mins = st?.todayMinutes ?? 0;
-      const streak = st?.streak ?? 0;
-      title.textContent = mins >= goalMin ? "Goal reached today. よくできました！" : streak > 0 ? `${streak}-day streak · keep it going` : "Ready for some Japanese?";
-      sub.textContent = `${Math.round(mins)} / ${goalMin} min today · ${st?.words ?? 0} words · ${st?.level.label ?? "Absolute beginner"}`;
-      meter.style.width = `${Math.min(100, (mins / goalMin) * 100)}%`;
-      meter.classList.toggle("done", mins >= goalMin);
-      const due = st?.dueToday ?? 0;
-      dueChip.style.display = due > 0 ? "" : "none";
-      dueChip.textContent = `Review · ${due} due`;
     },
   };
 }
@@ -366,7 +307,7 @@ function buildStats(actions: ViewActions): ViewHost {
 
 export function buildViews(actions: ViewActions, onChatHeightChange: () => void): Map<IslandViewName, ViewHost> {
   const map = new Map<IslandViewName, ViewHost>();
-  map.set("home", buildHome(actions));
+  map.set("home", buildToday(actions, { card: (...c) => card(null, ...c), btn }));
   map.set("nudge", buildNudge(actions));
   map.set("confused", buildConfused());
   map.set("note", buildNote());

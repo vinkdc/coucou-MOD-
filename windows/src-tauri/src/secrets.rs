@@ -11,6 +11,11 @@ pub const KNOWN_KEYS: &[&str] = &[
     "gemini-api-key",
     "deepseek-api-key",
     "fish-audio-api-key",
+    "google-client-id",
+    "google-client-secret",
+    "google-refresh-token",
+    "spotify-client-id",
+    "spotify-refresh-token",
 ];
 
 fn entry(key: &str) -> Option<Entry> {

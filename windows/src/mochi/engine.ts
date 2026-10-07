@@ -62,7 +62,7 @@ interface Particle {
 // ── Constants (MochiConst / PISTES.mochi) ─────────────────────────────────────
 
 /** How much bigger Mochi gets at the loudest part of its voice (0.09 = 9 %). */
-const SPEAK_GROW = 0.09;
+const SPEAK_GROW = 0.15;
 
 /** A stand-in for loudness: word-sized bursts, stronger and weaker over a phrase. */
 const syllables = (t: number): number => {

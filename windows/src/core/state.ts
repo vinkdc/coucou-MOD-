@@ -71,6 +71,9 @@ export interface Settings {
   ttsSpeed: number;
   autoPlay: boolean;
 
+  /** The look: dark, light, or whichever Windows uses. */
+  theme: "dark" | "light" | "auto";
+
   /** Let Mochi open links, search the web, control music and read basic PC facts. */
   pcTools: boolean;
 }
@@ -111,8 +114,20 @@ export const DEFAULT_SETTINGS: Settings = {
   ttsModel: "s2.1-pro-free",
   ttsSpeed: 0.9,
   autoPlay: true,
+  theme: "dark",
   pcTools: true,
 };
+
+/** Sets `data-theme` on the page ("auto" follows Windows) and keeps following it. */
+export function applyTheme(theme: Settings["theme"]) {
+  const media = window.matchMedia("(prefers-color-scheme: light)");
+  const set = () => {
+    const light = theme === "light" || (theme === "auto" && media.matches);
+    document.documentElement.dataset.theme = light ? "light" : "dark";
+  };
+  set();
+  media.onchange = theme === "auto" ? set : null;
+}
 
 type Listener = () => void;
 
@@ -142,6 +157,10 @@ class AppState {
   chatExpanded = false;
   /** Island height the chat needs to show everything in it, measured by the chat view (0 = not yet). */
   chatFitHeight = 0;
+  /** New things (uploads) the learner has not seen yet: a dot on the Today tab. */
+  feedFresh = false;
+  /** AI agents waiting for the learner: a dot on the Today tab, a count on Work. */
+  agentsWaiting = 0;
 
   /** Today's progress, refreshed whenever the learner changes. */
   stats: Stats | null = null;

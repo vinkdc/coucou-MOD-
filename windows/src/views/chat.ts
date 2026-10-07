@@ -5,11 +5,13 @@
 import { h, svg, clear } from "./dom";
 import { matches } from "../core/keys";
 import { ICONS } from "./icons";
+import { icon } from "./phosphor";
+import { startVoiceChat, type VoiceChat, type VoicePhase } from "../core/voicechat";
 import { Bridge, onEvent } from "../core/bridge";
 import { Sound } from "../core/sound";
 import { speakStream, stop, type SpeechStream } from "../core/voice";
 import { State, today, type ChatMessage } from "../core/state";
-import type { MemoryNote } from "../core/bridge";
+import type { GoogleItem, MemoryNote } from "../core/bridge";
 import { renderReply } from "../study/reply";
 import { spokenLines } from "../study/markup";
 import { SCENARIOS } from "../study/scenarios";
@@ -69,6 +71,119 @@ function memoryRow(message: ChatMessage, note: MemoryNote): HTMLElement {
   return row;
 }
 
+// ── From the learner's own day (Google Calendar and Tasks) ────────────────────
+// A title is sent to the AI only when the learner presses its chip.
+
+const day: { configured: boolean; connected: boolean; items: GoogleItem[]; loadedAt: number } = { configured: false, connected: false, items: [], loadedAt: 0 };
+
+/** Set by the chat view: re-reads the day (after connecting). */
+let reloadDay: (() => void) | null = null;
+
+function dayLabel(item: GoogleItem): string {
+  const title = item.title.length > 26 ? `${item.title.slice(0, 25)}…` : item.title;
+  if (item.kind === "event" && !item.allDay && item.when) {
+    const t = new Date(item.when);
+    if (!Number.isNaN(t.getTime())) return `${t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ${title}`;
+  }
+  return title;
+}
+
+function toast(message: string) {
+  State.noteMessage = message;
+  State.view = "note";
+  State.notify();
+}
+
+/** One tap to opt in: Google asks for consent in the browser, and the day appears here. */
+function connectHint(): HTMLElement {
+  const hints = h("div", { class: "chat-hints" }, h("div", { class: "hint-label", text: "From your day" }));
+  const chip = h("button", {
+    class: "quick-chip",
+    text: "Connect Google Calendar & Tasks",
+    title: "Practise phrases from your own events and tasks. Read-only until you press a button.",
+    onclick: () => {
+      chip.setAttribute("disabled", "");
+      void Bridge.googleConnect()
+        .then(() => {
+          day.loadedAt = 0;
+          reloadDay?.();
+        })
+        .catch((err) => {
+          chip.removeAttribute("disabled");
+          toast(String(err).replace(/^Error:\s*/, ""));
+        });
+    },
+  });
+  hints.append(h("div", { class: "quick-chips wrap" }, chip));
+  return hints;
+}
+
+/** "Thursday, Oct 8 at 1:30 PM" for a timed event, the date alone otherwise. */
+function whenText(item: GoogleItem): string {
+  const t = new Date(item.when);
+  if (!item.when || Number.isNaN(t.getTime())) return "";
+  const date = t.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+  return item.allDay ? date : `${date} at ${t.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+}
+
+/**
+ * Pressing an item asks Mochi to talk about it: what it is, what to expect or prepare, and a few
+ * Japanese phrases for it, knowing what else is on that day. This one press is what lets the
+ * item's details reach the AI; nothing else from the calendar is sent.
+ */
+function talkAboutDayItem(item: GoogleItem) {
+  const dayKey = item.when && !Number.isNaN(new Date(item.when).getTime()) ? new Date(item.when).toDateString() : "";
+  const sameDay = dayKey ? day.items.filter((o) => o !== item && o.when && new Date(o.when).toDateString() === dayKey) : [];
+  const at = (o: GoogleItem) => (o.allDay ? "" : ` (${new Date(o.when).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })})`);
+  const lines = [
+    "Here is something from my calendar. Talk to me about it like a friendly tutor: what it is, what I should expect or prepare, and two or three Japanese phrases I could use for it (with furigana).",
+    `Title: ${item.title}`,
+    item.kind === "task" ? `Type: task${whenText(item) ? `, due ${whenText(item)}` : ""}` : `When: ${whenText(item) || "(no time)"}`,
+    item.location ? `Where: ${item.location}` : "",
+    item.notes ? `Notes: ${item.notes}` : "",
+    sameDay.length ? `Also that day: ${sameDay.map((o) => o.title + at(o)).join("; ")}` : "",
+  ].filter(Boolean);
+  askInChat(lines.join("\n"));
+}
+
+function dayHints(): HTMLElement {
+  const hints = h("div", { class: "chat-hints" }, h("div", { class: "hint-label", text: "From your day" }));
+  const row = h("div", { class: "quick-chips wrap" });
+  for (const item of day.items.slice(0, 5)) {
+    row.append(
+      h("button", {
+        class: "quick-chip",
+        title: "Mochi talks about this",
+        text: dayLabel(item),
+        onclick: () => talkAboutDayItem(item),
+      }),
+    );
+  }
+  const when = (utc: string) => new Date(utc).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  row.append(
+    h("button", {
+      class: "quick-chip",
+      text: "＋ 15 min study",
+      title: "Add a short study block to your calendar, in the next free slot",
+      onclick: () =>
+        void Bridge.googleStudyBlock(15)
+          .then((start) => toast(`Added a 15-minute study block to your calendar: ${when(start)}.`))
+          .catch((err) => toast(String(err).replace(/^Error:\s*/, ""))),
+    }),
+    h("button", {
+      class: "quick-chip",
+      text: "＋ Review task",
+      title: "Add a review task to Google Tasks",
+      onclick: () =>
+        void Bridge.googleAddTask("Review Japanese cards (Kotoba)")
+          .then(() => toast("Added “Review Japanese cards” to Google Tasks."))
+          .catch((err) => toast(String(err).replace(/^Error:\s*/, ""))),
+    }),
+  );
+  hints.append(row);
+  return hints;
+}
+
 /** Lays out the conversation with Messages' rhythm: tight runs, a gap when the speaker changes. */
 function renderLog(log: HTMLElement, history: ChatMessage[], thinking: boolean) {
   clear(log);
@@ -91,6 +206,8 @@ function renderLog(log: HTMLElement, history: ChatMessage[], thinking: boolean) 
     }
     hints.append(row);
     log.append(hints);
+    if (day.connected) log.append(dayHints());
+    else if (day.configured) log.append(connectHint());
   }
   if (thinking) {
     const dots = h("div", { class: "chat-row" }, h("div", { class: "bubble typing" }, h("i"), h("i"), h("i")));
@@ -131,7 +248,8 @@ export function buildPrompt(onHeightChange: () => void, onActivity: () => void):
   log.addEventListener("scroll", () => State.notify(), { passive: true });
   const input = h("input", { type: "text", class: "chat-input", placeholder: "How do I say…?", spellcheck: "false", lang: "ja" }) as HTMLInputElement;
   const send = h("button", { class: "send-btn", title: "Send" }, svg(ICONS.arrowUp, 11));
-  const bar = h("div", { class: "chat-bar" }, input, send);
+  const mic = h("button", { class: "voice-btn", title: "Voice chat", "aria-label": "Voice chat" }, icon("microphone", 13));
+  const bar = h("div", { class: "chat-bar" }, input, mic, send);
   const el = h("div", { class: "view" }, h("div", { class: "card chat-card" }, h("div", { class: "chat-body" }, log, bar)));
 
   const syncSend = () => send.classList.toggle("ready", input.value.trim().length > 0 && !sending);
@@ -181,16 +299,92 @@ export function buildPrompt(onHeightChange: () => void, onActivity: () => void):
     onHeightChange();
   });
 
-  async function submit() {
-    const query = input.value.trim();
+  /** Reads today's events and tasks (at most every five minutes) when the chat is shown. */
+  async function loadDay() {
+    if (Date.now() - day.loadedAt < 5 * 60_000) return;
+    day.loadedAt = Date.now();
+    const status = await Bridge.googleStatus();
+    day.configured = status?.configured ?? false;
+    day.connected = status?.connected ?? false;
+    day.items = [];
+    if (day.connected) {
+      try {
+        day.items = await Bridge.googleAgenda();
+      } catch {
+        day.loadedAt = 0; // try again next time the chat opens
+      }
+    }
+    renderedCount = "";
+    State.notify();
+  }
+
+  reloadDay = () => void loadDay();
+
+  // ── Voice chat: the mic stays open, each utterance is sent, replies are spoken ──
+  let voice: VoiceChat | null = null;
+  let voicePhase: VoicePhase = "listening";
+
+  const syncVoice = () => {
+    mic.classList.toggle("live", voice !== null);
+    mic.classList.toggle("hearing", voice !== null && voicePhase === "hearing");
+    mic.title = voice ? "Stop voice chat" : "Voice chat";
+    if (voice) {
+      input.placeholder = voicePhase === "hearing" ? "Listening to you…" : voicePhase === "thinking" ? "Mochi is thinking…" : "Speak any time — Mochi is listening";
+    }
+  };
+
+  /** The island must not auto-close on a conversation that is merely quiet. */
+  let voiceKeepAlive = 0;
+
+  const stopVoice = () => {
+    voice?.stop();
+    voice = null;
+    window.clearInterval(voiceKeepAlive);
+    stop();
+    syncVoice();
+  };
+
+  async function toggleVoice() {
+    if (voice) return stopVoice();
+    try {
+      voice = await startVoiceChat({
+        onPhase: (p) => {
+          voicePhase = p;
+          syncVoice();
+          onActivity();
+        },
+        onUtterance: async (text) => {
+          while (sending) await new Promise((r) => setTimeout(r, 100));
+          await submit(text);
+        },
+        onError: (m) => {
+          State.noteMessage = m;
+          State.view = "note";
+          State.notify();
+        },
+      });
+      voiceKeepAlive = window.setInterval(onActivity, 2000);
+      syncVoice();
+    } catch (err) {
+      voice = null;
+      State.noteMessage = String(err).replace(/^Error:\s*/, "");
+      State.view = "note";
+      State.notify();
+    }
+  }
+
+  mic.addEventListener("click", () => void toggleVoice());
+
+  async function submit(heard?: string) {
+    const query = (heard ?? input.value).trim();
     if (!query || sending) return;
-    input.value = "";
+    if (heard === undefined) input.value = "";
     quoted = false;
     sending = true;
     streamed = null;
     streamRound = -1;
     stop();
-    speech = State.settings.autoPlay ? speakStream() : null;
+    speech = State.settings.autoPlay || voice ? speakStream() : null;
     spoken = 0;
     Sound.play("send");
     onActivity();
@@ -268,6 +462,10 @@ export function buildPrompt(onHeightChange: () => void, onActivity: () => void):
       e.preventDefault();
       void submit();
     }
+    if (matches(ev, keys, "chat.voice")) {
+      e.preventDefault();
+      void toggleVoice();
+    }
     // Keys typed here stay here, except the tab keys, which the island decides on.
     if (!matches(ev, keys, "tab.prev") && !matches(ev, keys, "tab.next")) e.stopPropagation();
   });
@@ -283,10 +481,13 @@ export function buildPrompt(onHeightChange: () => void, onActivity: () => void):
         fit();
       }
       if (State.view === "prompt" && State.mode === "expanded" && State.chatFitHeight === 0) fit();
-      input.placeholder = State.chatHistory.length === 0 ? "How do I say…?" : "Reply to Mochi";
+      if (voice && State.view !== "prompt") stopVoice();
+      if (voice) syncVoice();
+      else input.placeholder = State.chatHistory.length === 0 ? "How do I say…?" : "Reply to Mochi";
       syncSend();
     },
     focus() {
+      void loadDay();
       input.focus();
       // A quote just put there is to be added to: the caret goes after it, nothing is selected.
       if (quoted) input.setSelectionRange(input.value.length, input.value.length);

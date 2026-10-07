@@ -3,16 +3,24 @@
 // Two surfaces: the study window (conversation + stats), and Mochi's island, a
 // summoned overlay for quick questions and the daily nudge.
 
+mod agents;
 mod assistant;
 mod claude;
 mod fishaudio;
 mod deepseek;
 mod gemini;
+mod google;
+mod oauth;
+mod spotify;
+mod hooks;
 mod hotkey;
 mod island;
 mod learner;
+mod media;
 mod log;
 mod memory;
+mod pipe;
+mod rules;
 mod pc;
 mod platform;
 mod secrets;
@@ -32,6 +40,7 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 use assistant::Chat;
 use island::{PollGate, ScreenInfo};
+use hooks::{HookPreview, HookStatus};
 use learner::Learner;
 use settings::Settings;
 
@@ -599,7 +608,20 @@ async fn speech_transcribe(request: tauri::ipc::Request<'_>) -> Result<String, S
         .and_then(|v| v.to_str().ok())
         .unwrap_or("audio/webm")
         .to_string();
-    fishaudio::transcribe(bytes, &mime, "ja").await
+    // Shadowing reads Japanese ("ja", the default); voice chat sends an empty hint to let the model detect it.
+    let language = request
+        .headers()
+        .get("x-language")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("ja")
+        .to_string();
+    // Voice chat asks for Gemini ("x-engine"), so listening works without Fish Audio credit.
+    let gemini = request.headers().get("x-engine").and_then(|v| v.to_str().ok()) == Some("gemini");
+    if gemini {
+        let key = secrets::get("gemini-api-key").ok_or_else(|| "Voice chat needs a Gemini key: add one in Settings → Gemini.".to_string())?;
+        return gemini::transcribe(&key, bytes, &mime).await;
+    }
+    fishaudio::transcribe(bytes, &mime, &language).await
 }
 
 /// The Gemini models the stored key can use, for the Settings picker.
@@ -779,6 +801,138 @@ fn secret_clear(key: String) -> Result<(), String> {
     secrets::clear(&key)
 }
 
+// ── Google (Calendar and Tasks) ───────────────────────────────────────────────
+
+#[tauri::command]
+fn google_status() -> google::Status {
+    google::status()
+}
+
+#[tauri::command]
+async fn google_connect() -> Result<(), String> {
+    google::connect(platform::open_url).await
+}
+
+#[tauri::command]
+fn google_disconnect() -> Result<(), String> {
+    google::disconnect()
+}
+
+#[tauri::command]
+async fn google_agenda() -> Result<Vec<google::Item>, String> {
+    google::agenda().await
+}
+
+#[tauri::command]
+async fn google_busy_now() -> Result<bool, String> {
+    google::busy_now().await
+}
+
+/// A button: puts a short study block in the first free slot (the page sends its UTC offset).
+#[tauri::command]
+async fn google_study_block(tz_offset_min: i64, minutes: i64) -> Result<String, String> {
+    google::add_study_block(tz_offset_min, minutes).await
+}
+
+/// A button: a review task in Google Tasks.
+#[tauri::command]
+async fn google_add_task(title: String) -> Result<(), String> {
+    google::add_task(&title).await
+}
+
+/// New uploads from the channels the learner follows (last week).
+#[tauri::command]
+async fn google_uploads() -> Result<Vec<google::Upload>, String> {
+    google::youtube_uploads().await
+}
+
+// ── Spotify ───────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn spotify_status() -> spotify::Status {
+    spotify::status()
+}
+
+#[tauri::command]
+async fn spotify_connect() -> Result<(), String> {
+    spotify::connect(platform::open_url).await
+}
+
+#[tauri::command]
+fn spotify_disconnect() -> Result<(), String> {
+    spotify::disconnect()
+}
+
+#[tauri::command]
+async fn spotify_now() -> Result<Option<spotify::Track>, String> {
+    spotify::now_playing().await
+}
+
+// ── Claude Code hooks (approvals from the island) ─────────────────────────────
+
+#[tauri::command]
+fn hooks_status() -> HookStatus {
+    hooks::status()
+}
+
+/// The diff the learner has to look at before anything is written.
+#[tauri::command]
+fn hooks_preview(install: bool) -> Result<HookPreview, String> {
+    hooks::preview(install)
+}
+
+/// Only ever called from an explicit click in Settings. The fingerprint comes from the
+/// preview that was looked at, so a settings.json that changed in between is refused.
+#[tauri::command]
+fn hooks_apply(install: bool, fingerprint: String) -> Result<String, String> {
+    hooks::write(install, &fingerprint)
+}
+
+#[tauri::command]
+fn approval_decision(app: AppHandle, request_id: String, decision: String) {
+    pipe::answer(&app, &request_id, &decision);
+}
+
+/// The island has the card on screen, so the long wait for a human may begin.
+#[tauri::command]
+fn approval_ack(app: AppHandle, request_id: String) {
+    pipe::acknowledge(&app, &request_id);
+}
+
+/// Nobody can act on this request: Claude Code asks in the terminal at once.
+#[tauri::command]
+fn approval_decline(app: AppHandle, request_id: String) {
+    pipe::decline(&app, &request_id);
+}
+
+/// Always allow this tool in this project (for Bash: this first word). Only from the Always button.
+#[tauri::command]
+fn always_add(tool: String, project: String, prefix: String) -> Result<(), String> {
+    rules::add(rules::Rule { tool, project, prefix })
+}
+
+#[tauri::command]
+fn always_list() -> Vec<rules::Rule> {
+    rules::list()
+}
+
+#[tauri::command]
+fn always_remove(index: usize) -> Result<(), String> {
+    rules::remove(index)
+}
+
+/// What is playing on this PC (the Spotify app, a browser tab, any player), from Windows' media controls.
+#[tauri::command]
+async fn media_now() -> Option<media::Track> {
+    tauri::async_runtime::spawn_blocking(media::now_playing).await.ok().flatten()
+}
+
+/// The AI coding agents running on this PC (Claude Code, Codex): status only, read from their session files.
+#[tauri::command]
+async fn agents_scan() -> Vec<agents::Session> {
+    tauri::async_runtime::spawn_blocking(agents::scan).await.unwrap_or_default()
+}
+
 /// Lets the pages write to the same log as the Rust side.
 #[tauri::command]
 fn log_line(message: String) {
@@ -810,6 +964,37 @@ fn page_url(app: &AppHandle, page: &str) -> WebviewUrl {
 /// hidden afterwards: a WebView2 window created later silently comes up blank in
 /// this app, so the windows that work are the ones that exist before the
 /// island's webview does. Closing one only hides it.
+/// A floating panel instead of a window: no frame, rounded by the page, above other windows,
+/// out of the taskbar, dragged by its own bar. Closing only hides it.
+fn create_panel(app: &AppHandle, label: &str, page: &str, title: &str, size: (f64, f64)) {
+    let built = WebviewWindowBuilder::new(app, label, page_url(app, page))
+        .additional_browser_args(BROWSER_ARGS)
+        .title(title)
+        .inner_size(size.0, size.1)
+        .resizable(false)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible(false)
+        .center()
+        .disable_drag_drop_handler()
+        .build();
+    match built {
+        Ok(win) => {
+            let hidden = win.clone();
+            win.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = hidden.hide();
+                }
+            });
+        }
+        Err(err) => log::line(format!("{label} panel failed: {err}")),
+    }
+}
+
 fn create_window(app: &AppHandle, label: &str, page: &str, title: &str, size: (f64, f64), min: (f64, f64), drops: bool) {
     let mut builder = WebviewWindowBuilder::new(app, label, page_url(app, page))
         .additional_browser_args(BROWSER_ARGS)
@@ -915,6 +1100,7 @@ pub fn run() {
             last_day: Mutex::new(String::new()),
         })
         .manage(Chats::default())
+        .manage(pipe::Pending::default())
         .invoke_handler(tauri::generate_handler![
             boot,
             save_settings,
@@ -927,6 +1113,29 @@ pub fn run() {
             idle_ms,
             reposition,
             open_url,
+            google_status,
+            google_connect,
+            google_disconnect,
+            google_agenda,
+            google_busy_now,
+            google_study_block,
+            google_add_task,
+            google_uploads,
+            spotify_status,
+            spotify_connect,
+            spotify_disconnect,
+            spotify_now,
+            media_now,
+            hooks_status,
+            hooks_preview,
+            hooks_apply,
+            approval_decision,
+            approval_ack,
+            approval_decline,
+            always_add,
+            always_list,
+            always_remove,
+            agents_scan,
             quit_app,
             selection_action,
             log_line,
@@ -966,7 +1175,7 @@ pub fn run() {
             let handle = app.handle().clone();
             tray::build(&handle)?;
             // Before the island: see create_window.
-            create_window(&handle, "settings", "settings.html", "Settings — Kotoba", (560.0, 680.0), (460.0, 480.0), true);
+            create_panel(&handle, "settings", "settings.html", "Settings — Kotoba", (480.0, 660.0));
             create_selection_popup(&handle);
             create_window(&handle, SKIN_EDITOR_LABEL, "skin-editor.html", "Skin editor — Kotoba", (1120.0, 740.0), (900.0, 600.0), false);
 
@@ -987,6 +1196,9 @@ pub fn run() {
                 log::line(format!("hotkey: {err}"));
             }
             selection::apply(&handle, loaded.selection_popup, &loaded.selection_ignore);
+            // Agent approvals: put the relay where settings.json can point at it, and listen for it.
+            hooks::ensure_hook_exe(&handle);
+            pipe::start(handle.clone());
             // The island page opens the study panel itself once it has loaded.
             Ok(())
         })

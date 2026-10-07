@@ -453,6 +453,59 @@ fn quota_model(detail: &str) -> String {
         .unwrap_or_default()
 }
 
+// ── Speech to text ────────────────────────────────────────────────────────────
+
+const TRANSCRIBE_PROMPT: &str = "Transcribe exactly what the speaker says, in the language they speak \
+(Vietnamese, English or Japanese, possibly mixed). Write Japanese in normal kanji and kana. Output only \
+the transcript, with no comments or quotes. If there is no intelligible speech, output nothing.";
+
+/// What was said in a short recording (WAV), through the user's Gemini key:
+/// voice chat's "the AI gets the words" step, with no Fish Audio credit needed.
+pub async fn transcribe(key: &str, audio: &[u8], mime: &str) -> Result<String, String> {
+    if audio.is_empty() {
+        return Err("The recording is empty.".into());
+    }
+    if audio.len() as u64 > MAX_INLINE_BINARY {
+        return Err("That recording is too long. Keep it to a sentence or two.".into());
+    }
+    let body = json!({
+        "contents": [{ "role": "user", "parts": [
+            { "text": TRANSCRIBE_PROMPT },
+            { "inlineData": { "mimeType": mime, "data": base64_for(audio) } },
+        ]}],
+        "generationConfig": { "temperature": 0.0, "maxOutputTokens": 1024 },
+    });
+    // Hearing is where the lite models slip, so the full Flash goes first and Flash-Lite is the
+    // fallback; a busy (503) or out-of-quota model just moves on to the next one.
+    let list = models(key).await?;
+    let mut order = automatic_candidates(&list);
+    order.sort_by_key(|id| id.ends_with("-lite"));
+    let mut last = "No Gemini model is available for listening.".to_string();
+    for model in order.into_iter().take(4) {
+        let url = format!("{BASE}/models/{model}:generateContent");
+        let result = match post(key, &url, &body).await {
+            Ok(response) => parse(response, &url).await,
+            Err(e) => Err(e),
+        };
+        match result {
+            Ok(v) => {
+                let text = v
+                    .pointer("/candidates/0/content/parts")
+                    .and_then(Value::as_array)
+                    .map(|parts| parts.iter().filter_map(|p| p.get("text").and_then(Value::as_str)).collect::<String>())
+                    .unwrap_or_default();
+                return Ok(text.trim().to_string());
+            }
+            Err(e) if e.contains("503") || e.contains("overloaded") || e.contains("unavailable") || is_out_of_quota(&e) => {
+                last = e;
+                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last)
+}
+
 // ── HTTP ──────────────────────────────────────────────────────────────────────
 
 fn client() -> Result<reqwest::Client, String> {

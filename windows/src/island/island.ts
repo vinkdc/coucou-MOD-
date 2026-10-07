@@ -10,7 +10,7 @@ import {
   type IslandMode, type IslandViewName,
 } from "../core/layout";
 import { Sound } from "../core/sound";
-import { State } from "../core/state";
+import { State, applyTheme } from "../core/state";
 import { level as voiceLevel, onVoiceChange, speak } from "../core/voice";
 import { BotEngine } from "../mochi/engine";
 import { RibbonSkin } from "../mochi/skin";
@@ -377,6 +377,16 @@ export class Island {
     else this.alert("review");
   }
 
+  /** An agent asks for a decision: open on Today's Work page and stay open until it is answered. */
+  peekAgents() {
+    State.isPinned = true;
+    this.fsm.pinned = true;
+    State.view = "home";
+    this.fsm.forceHome();
+    this.expand("home");
+    window.dispatchEvent(new CustomEvent("kotoba-today-page", { detail: 1 }));
+  }
+
   /** An alert stopped waiting for an answer: let the island auto-close again. */
   dropPin() {
     this.fsm.pinned = false;
@@ -410,12 +420,10 @@ export class Island {
     const r = this.radius.value;
     this.islandEl.style.width = `${w}px`;
     this.islandEl.style.height = `${hh}px`;
-    // Square against the screen edge it is anchored to, rounded away from it.
-    this.islandEl.style.borderRadius =
-      State.settings.position === "bottom" ? `${r}px ${r}px 0 0` : `0 0 ${r}px ${r}px`;
-    // The ears grow with the island, and vanish with it.
+    // A floating pill, collapsed or expanded: rounded on every corner, no ears.
+    this.islandEl.style.borderRadius = State.mode !== "expanded" ? `${hh / 2}px` : `${r}px`;
     this.islandEl.dataset.edge = State.settings.position === "bottom" ? "bottom" : "top";
-    this.islandEl.style.setProperty("--ear", `${Math.max(0, Math.min(12, r * 0.6, hh / 3, w / 8))}px`);
+    this.islandEl.style.setProperty("--ear", "0px");
     this.islandEl.style.transform = `translateX(-50%)`;
     this.islandEl.dataset.view = State.view;
     this.applyAnchor();
@@ -437,13 +445,19 @@ export class Island {
   /** Pins the island to the window edge the setting asks for — the edge it springs from. */
   private applyAnchor() {
     const bottom = State.settings.position === "bottom";
-    this.islandEl.style.top = bottom ? "auto" : "0";
-    this.islandEl.style.bottom = bottom ? "0" : "auto";
+    const gap = this.edgeGap();
+    this.islandEl.style.top = bottom ? "auto" : `${gap}px`;
+    this.islandEl.style.bottom = bottom ? `${gap}px` : "auto";
+  }
+
+  /** The pill floats a few pixels off the screen edge, collapsed or expanded. */
+  private edgeGap(): number {
+    return 6;
   }
 
   /** Window-local y of the island's top edge. */
   private islandY(h: number): number {
-    return State.settings.position === "bottom" ? PANEL_H - h : 0;
+    return State.settings.position === "bottom" ? PANEL_H - h - this.edgeGap() : this.edgeGap();
   }
 
   /** Island rect in window coordinates. */
@@ -897,6 +911,7 @@ export class Island {
     Sound.setVolume(State.settings.soundVolume);
     this.fsm.homeToPetitDelay = State.settings.autoCloseInterval;
     this.applySkin(State.settings.skin);
+    applyTheme(State.settings.theme);
     this.applyGeometry();
     State.notify();
   }

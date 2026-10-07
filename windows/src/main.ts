@@ -4,9 +4,11 @@
 // Inter, bundled (never fetched): the closest free match to Apple's SF Pro,
 // whose licence keeps it on Apple platforms. Optical sizes, like SF Text/Display.
 import "@fontsource-variable/inter/opsz.css";
+import "@fontsource-variable/noto-sans-jp";
 import "./style.css";
 import { Bridge, IS_TAURI, onEvent, type HotkeyEvent } from "./core/bridge";
 import { Sound } from "./core/sound";
+import { startApprovals } from "./core/approvals";
 import { State, today, type Settings } from "./core/state";
 import { Island } from "./island/island";
 import { askInChat } from "./views/chat";
@@ -89,6 +91,8 @@ function startReminders(island: Island) {
       todayMinutes: State.stats?.todayMinutes ?? 0,
     });
     if (!moment) return;
+    // Connected to Google: stay quiet during a meeting (nothing is recorded, so the offer comes later).
+    if ((await Bridge.googleStatus())?.connected && (await Bridge.googleBusyNow()) === true) return;
     saveState(shown(st, moment, now));
     afterReturn = 0;
     offer(island, moment);
@@ -172,6 +176,18 @@ async function main() {
   });
 
   startReminders(island);
+  // An agent asking for a decision opens the island on Today's Work page, unless it must not
+  // (a meeting, a full-screen app): then the agent asks in the terminal at once.
+  startApprovals(async () => {
+    const ok = (await Bridge.canSummon()) ?? true;
+    if (ok) island.peekAgents();
+    return ok;
+  });
+  // Nothing left to decide: the island may close again.
+  window.addEventListener("kotoba-approvals-idle", () => {
+    State.isPinned = false;
+    island.dropPin();
+  });
   island.launch();
 
   // In a plain browser, unlock audio on the first click so the visuals and

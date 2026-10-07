@@ -3,6 +3,7 @@
 // `npm run dev` alone.
 
 import { Channel, invoke } from "@tauri-apps/api/core";
+import type { AgentSession } from "./agents";
 import { listen } from "@tauri-apps/api/event";
 import type { Settings } from "./state";
 
@@ -23,6 +24,74 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T |
 async function callOrThrow<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (!IS_TAURI) throw new Error("not running inside Kotoba");
   return invoke<T>(cmd, args);
+}
+
+export interface GoogleStatus {
+  /** A client id and secret are stored. */
+  configured: boolean;
+  /** The app ships its own Google client: nothing for the learner to set up. */
+  builtIn: boolean;
+  connected: boolean;
+}
+
+export interface GoogleItem {
+  id: string;
+  kind: "event" | "task";
+  title: string;
+  /** Where, and what its notes say; sent to the AI only when this one item is pressed. */
+  location: string;
+  notes: string;
+  /** RFC 3339 start (or due date); empty for an undated task. */
+  when: string;
+  allDay: boolean;
+}
+
+export interface YoutubeUpload {
+  id: string;
+  title: string;
+  channel: string;
+  /** RFC 3339. */
+  published: string;
+  url: string;
+}
+
+export interface SpotifyTrack {
+  id: string;
+  title: string;
+  artist: string;
+  playing: boolean;
+  /** The player, when read from Windows' media controls ("Spotify", "Browser"…). */
+  app?: string;
+}
+
+/** What Windows' media controls report. */
+export interface MediaTrack {
+  app: string;
+  title: string;
+  artist: string;
+  playing: boolean;
+}
+
+export interface HookStatus {
+  installed: boolean;
+  settingsPath: string;
+  hookPath: string;
+  hookReady: boolean;
+}
+
+export interface HookPreview {
+  diff: string;
+  backup: string;
+  settingsPath: string;
+  /** Hand back to hooksApply so only the reviewed diff is ever written. */
+  fingerprint: string;
+}
+
+export interface AlwaysRule {
+  tool: string;
+  project: string;
+  /** First word of a Bash command; empty for other tools. */
+  prefix: string;
 }
 
 /** Which conversation a message belongs to; each keeps its own history. */
@@ -241,10 +310,10 @@ export const Bridge = {
 
   // ── Speech to text ────────────────────────────────────────────────────────
 
-  /** What was said in a recording (Fish Audio). Rejects with a message to show. */
-  transcribe: (bytes: ArrayBuffer, mime: string) =>
+  /** What was said in a recording (Fish Audio). `language` is a hint, "ja" by default, "" to detect. Rejects with a message to show. */
+  transcribe: (bytes: ArrayBuffer, mime: string, language = "ja", engine: "fish" | "gemini" = "fish") =>
     IS_TAURI
-      ? invoke<string>("speech_transcribe", new Uint8Array(bytes), { headers: { "x-mime": mime } })
+      ? invoke<string>("speech_transcribe", new Uint8Array(bytes), { headers: { "x-mime": mime, "x-language": language, "x-engine": engine } })
       : Promise.reject(new Error("not running inside Kotoba")),
 
   /** Gemini models the stored key can use. */
@@ -289,6 +358,56 @@ export const Bridge = {
   secretPresent: (key: string) => call<boolean>("secret_present", { key }),
   secretSet: (key: string, value: string) => callOrThrow<void>("secret_set", { key, value }),
   secretClear: (key: string) => callOrThrow<void>("secret_clear", { key }),
+
+  // ── Google Calendar and Tasks (the learner's own day) ─────────────────────
+
+  googleStatus: () => call<GoogleStatus>("google_status"),
+  /** Opens the browser for consent; resolves once the learner has said yes. */
+  googleConnect: () => callOrThrow<void>("google_connect"),
+  googleDisconnect: () => callOrThrow<void>("google_disconnect"),
+  /** Event and task titles for the next days (nothing else). */
+  googleAgenda: () => callOrThrow<GoogleItem[]>("google_agenda"),
+  /** In a meeting right now? null when unknown (not connected, offline). */
+  googleBusyNow: () => call<boolean>("google_busy_now"),
+  /** Button only: a study block in the first free slot; resolves with its start (UTC). */
+  googleStudyBlock: (minutes: number) =>
+    callOrThrow<string>("google_study_block", { tzOffsetMin: -new Date().getTimezoneOffset(), minutes }),
+  /** Button only: a review task in Google Tasks. */
+  googleAddTask: (title: string) => callOrThrow<void>("google_add_task", { title }),
+
+  /** New uploads (last week) from the channels the learner follows. */
+  googleUploads: () => callOrThrow<YoutubeUpload[]>("google_uploads"),
+
+  // ── Agent approvals (Claude Code hooks) ───────────────────────────────────
+
+  hooksStatus: () => call<HookStatus>("hooks_status"),
+  /** The diff to look at before anything is written to Claude Code's settings. */
+  hooksPreview: (install: boolean) => callOrThrow<HookPreview>("hooks_preview", { install }),
+  /** Only from an explicit click, with the fingerprint of the diff that was shown. Resolves with the backup path. */
+  hooksApply: (install: boolean, fingerprint: string) => callOrThrow<string>("hooks_apply", { install, fingerprint }),
+  /** "allow" or "deny", from a button. */
+  approvalDecision: (requestId: string, decision: "allow" | "deny") => call<void>("approval_decision", { requestId, decision }),
+  /** The request is on screen: the long wait for a human may begin. */
+  approvalAck: (requestId: string) => call<void>("approval_ack", { requestId }),
+  /** Nobody can act on it: Claude Code asks in the terminal at once. */
+  approvalDecline: (requestId: string) => call<void>("approval_decline", { requestId }),
+  alwaysAdd: (tool: string, project: string, prefix: string) => callOrThrow<void>("always_add", { tool, project, prefix }),
+  alwaysList: () => call<AlwaysRule[]>("always_list"),
+  alwaysRemove: (index: number) => callOrThrow<void>("always_remove", { index }),
+
+  /** AI coding agents running on this PC (Claude Code, Codex), read from their session files. */
+  agentsScan: () => call<AgentSession[]>("agents_scan"),
+
+  /** What is playing on this PC, from any player; no sign-in. */
+  mediaNow: () => call<MediaTrack>("media_now"),
+
+  // ── Spotify ───────────────────────────────────────────────────────────────
+
+  spotifyStatus: () => call<GoogleStatus>("spotify_status"),
+  spotifyConnect: () => callOrThrow<void>("spotify_connect"),
+  spotifyDisconnect: () => callOrThrow<void>("spotify_disconnect"),
+  /** What is playing now, or null when nothing is. */
+  spotifyNow: () => callOrThrow<SpotifyTrack | null>("spotify_now"),
 };
 
 export async function onEvent<T>(name: string, handler: (payload: T) => void) {

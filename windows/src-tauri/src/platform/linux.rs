@@ -245,6 +245,10 @@ pub fn paste_text(_text: &str) -> Result<(), String> {
     Err("Replacing text works on Windows only.".into())
 }
 
+pub fn copy_selection() -> Result<String, String> {
+    Err("Copying the selection is Windows-only here.".into())
+}
+
 pub fn idle_ms() -> u64 {
     u64::MAX
 }

@@ -3,6 +3,8 @@
 // they are served at /sounds/<name>.wav. Default volume 0.12, slider range 0–0.2,
 // exactly like the Mac player, and several sounds may overlap.
 
+import { setVoiceVolume } from "./voice";
+
 export const SOUND_NAMES = [
   "peek", "open", "close", "hover", "blip", "slap", "annoyed", "dizzy", "greet",
   "work", "finish", "error", "approval", "question", "approve", "gulp", "tick",
@@ -12,6 +14,21 @@ export const SOUND_NAMES = [
 
 export type SoundName = (typeof SOUND_NAMES)[number];
 
+/** How loud a sound should be played so that all of them match: its RMS brought to a common target. */
+const TARGET_RMS = 0.1;
+function levelGain(buf: AudioBuffer): number {
+  const data = buf.getChannelData(0);
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+  const rms = Math.sqrt(sum / Math.max(1, data.length));
+  if (rms < 1e-4) return 1;
+  // Never boost past the point where the loudest sample would clip.
+  let peak = 0;
+  for (let i = 0; i < data.length; i += 4) peak = Math.max(peak, Math.abs(data[i]));
+  const clipLimit = peak > 0 ? 0.95 / peak : 4;
+  return Math.max(0.25, Math.min(4, TARGET_RMS / rms, clipLimit));
+}
+
 class SoundEngine {
   enabled = true;
   volume = 0.12;
@@ -19,6 +36,8 @@ class SoundEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private buffers = new Map<string, AudioBuffer>();
+  /** Per-sound gain that brings every effect to the same loudness (the WAVs were mastered unevenly). */
+  private gains = new Map<string, number>();
   private loading: Promise<void> | null = null;
   private idleTimer: number | null = null;
 
@@ -41,6 +60,7 @@ class SoundEngine {
             if (!res.ok) return;
             const buf = await ctx.decodeAudioData(await res.arrayBuffer());
             this.buffers.set(name, buf);
+            this.gains.set(name, levelGain(buf));
           } catch {
             /* a missing sound must never break the island */
           }
@@ -78,6 +98,8 @@ class SoundEngine {
   setVolume(v: number) {
     this.volume = Math.max(0, Math.min(0.2, v));
     if (this.master) this.master.gain.value = this.volume;
+    // The same slider sets how loud the voice is, so effects and speech stay in proportion.
+    setVoiceVolume(this.volume);
   }
 
   setEnabled(on: boolean) {
@@ -97,7 +119,10 @@ class SoundEngine {
     if (ctx.state === "suspended") void ctx.resume();
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.connect(master);
+    const level = ctx.createGain();
+    level.gain.value = this.gains.get(name) ?? 1;
+    src.connect(level);
+    level.connect(master);
     src.start();
   }
 }

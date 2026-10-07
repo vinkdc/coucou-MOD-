@@ -5,6 +5,7 @@ import "@fontsource-variable/inter/opsz.css";
 import "./settings.css";
 import { Bridge, onEvent, type SkinInfo, type Voice } from "../core/bridge";
 import { DEFAULT_SETTINGS, type Settings } from "../core/state";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { h, clear } from "../views/dom";
 import { BUNDLE_PREFIX, bundleId, listBundles } from "../mochi/bundles";
 import { KEY_ACTIONS, SCOPE_TITLES, binding, capsOf, comboFromEvent, usable } from "../core/keys";
@@ -470,6 +471,206 @@ function voiceSection(hasKey: boolean): HTMLElement {
   );
 }
 
+// ── Google section (Calendar and Tasks) ───────────────────────────────────────
+
+function googleSection(configuredAtStart: boolean, connectedAtStart: boolean, builtIn: boolean): HTMLElement {
+  let configured = configuredAtStart;
+  let connected = connectedAtStart;
+  const dot = h("span", {});
+  const state = h("span", { class: "hint" });
+  const idField = h("input", {
+    type: "text", placeholder: configured ? "Client ID  (stored)" : "Client ID",
+    style: "flex:1 1 auto;min-width:0", autocomplete: "off", spellcheck: "false",
+  }) as HTMLInputElement;
+  const secretField = h("input", {
+    type: "password", placeholder: configured ? "Client secret  (stored)" : "Client secret",
+    style: "flex:1 1 auto;min-width:0", autocomplete: "off", spellcheck: "false",
+  }) as HTMLInputElement;
+  const saveBtn = h("button", { text: "Save" });
+  const connectBtn = h("button", { class: "primary", text: "Connect Google" }) as HTMLButtonElement;
+  const disconnectBtn = h("button", { class: "danger", text: "Disconnect" });
+  const feedback = h("div", {});
+
+  const sync = () => {
+    clear(dot);
+    dot.append(statusDot(connected));
+    state.textContent = connected
+      ? "Connected. Mochi can turn your events and tasks into phrases, and add study time when you click."
+      : configured
+        ? "Ready to connect."
+        : "Google sign-in isn't set up in this build.";
+    connectBtn.style.display = configured && !connected ? "" : "none";
+    disconnectBtn.style.display = connected ? "" : "none";
+  };
+
+  const say = (kind: "ok" | "err", text: string) => {
+    clear(feedback);
+    feedback.append(h("div", { class: `notice ${kind}`, text }));
+  };
+
+  saveBtn.addEventListener("click", async () => {
+    const id = idField.value.trim();
+    const secret = secretField.value.trim();
+    if (!id || !secret) return say("err", "Paste both the client ID and the client secret.");
+    try {
+      await Bridge.secretSet("google-client-id", id);
+      await Bridge.secretSet("google-client-secret", secret);
+      idField.value = "";
+      secretField.value = "";
+      configured = true;
+      sync();
+      say("ok", "Saved in the Credential Manager. It never touches disk.");
+    } catch (err) {
+      say("err", `Could not save: ${String(err)}`);
+    }
+  });
+
+  connectBtn.addEventListener("click", async () => {
+    connectBtn.disabled = true;
+    say("ok", "Finish in your browser: choose your Google account and allow access.");
+    try {
+      await Bridge.googleConnect();
+      connected = true;
+      clear(feedback);
+    } catch (err) {
+      say("err", String(err).replace(/^Error:\s*/, ""));
+    }
+    connectBtn.disabled = false;
+    sync();
+  });
+
+  disconnectBtn.addEventListener("click", async () => {
+    try {
+      await Bridge.googleDisconnect();
+      connected = false;
+      clear(feedback);
+    } catch (err) {
+      say("err", String(err));
+    }
+    sync();
+  });
+
+  sync();
+  // Learners just press Connect. Only a build without a built-in Google client shows the setup fields.
+  const own = h(
+    "details",
+    {},
+    h("summary", { class: "hint", text: "Use my own Google project (developers)" }),
+    h("div", { class: "row" }, h("label", { text: "Client ID" }), idField),
+    h("div", { class: "row" }, h("label", { text: "Client secret" }), secretField, saveBtn),
+    h("span", {
+      class: "hint",
+      text: "Create a Desktop-app OAuth client in Google Cloud Console with the Calendar and Tasks APIs enabled, then paste its ID and secret.",
+    }),
+  );
+  if (!builtIn) own.setAttribute("open", "");
+  return h(
+    "section",
+    {},
+    h("h2", {}, dot, h("span", { text: "Google (Calendar, Tasks, YouTube)" })),
+    state,
+    h("div", { class: "row" }, connectBtn, disconnectBtn),
+    feedback,
+    h("span", {
+      class: "hint",
+      text:
+        "One tap, then you're done. Kotoba asks only for your events, free/busy and Tasks, never mail or Drive. " +
+        "An event’s title, time, place and notes go to the AI only when you press that one item in “From your day”. Attendees are never read. Nothing is added to your calendar unless you press a button.",
+    }),
+    own,
+  );
+}
+
+// ── Agents section (approvals from the island) ───────────────────────────────
+
+function agentsSection(): HTMLElement {
+  const dot = h("span", {});
+  const state = h("span", { class: "hint" });
+  const toggleBtn = h("button", { class: "primary" }) as HTMLButtonElement;
+  const panel = h("div", {});
+  const rules = h("div", {});
+  let installed = false;
+  let ready = true;
+
+  const say = (kind: "ok" | "err", text: string) => {
+    clear(panel);
+    panel.append(h("div", { class: `notice ${kind}`, text }));
+  };
+
+  async function loadRules() {
+    const list = (await Bridge.alwaysList()) ?? [];
+    clear(rules);
+    rules.append(h("h3", { text: "Always allowed" }));
+    if (!list.length) rules.append(h("span", { class: "hint", text: "Nothing yet. Pressing “Always allow” on a request adds it here." }));
+    list.forEach((r, i) => {
+      rules.append(
+        h("div", { class: "row" },
+          h("label", { text: `${r.tool}${r.prefix ? ` ${r.prefix}` : ""}` }),
+          h("span", { class: "hint", text: `in ${r.project || "any folder"}` }),
+          h("button", { class: "danger", text: "Remove", onclick: async () => { await Bridge.alwaysRemove(i).catch(() => {}); void loadRules(); } }),
+        ),
+      );
+    });
+  }
+
+  async function refresh() {
+    const st = await Bridge.hooksStatus();
+    installed = st?.installed ?? false;
+    ready = st?.hookReady ?? false;
+    clear(dot);
+    dot.append(statusDot(installed));
+    state.textContent = installed
+      ? "On. Claude Code asks Kotoba first; Allow, Deny or Always allow from the Today tab. If Kotoba is closed, it asks in the terminal as usual."
+      : ready
+        ? "Off. Turn on to approve Claude Code's permission requests from the island."
+        : "The relay program isn't built yet. In development run: cargo build -p kotoba-hook";
+    toggleBtn.textContent = installed ? "Turn off…" : "Turn on…";
+    toggleBtn.disabled = !installed && !ready;
+    await loadRules();
+  }
+
+  async function preview(install: boolean) {
+    clear(panel);
+    try {
+      const p = await Bridge.hooksPreview(install);
+      const confirm = h("button", { class: "primary", text: install ? "Add to settings.json" : "Remove from settings.json" }) as HTMLButtonElement;
+      const cancel = h("button", { text: "Cancel", onclick: () => clear(panel) });
+      confirm.addEventListener("click", async () => {
+        confirm.disabled = true;
+        try {
+          const backup = await Bridge.hooksApply(install, p.fingerprint);
+          await refresh();
+          say("ok", `Done. Your previous settings are saved at ${backup}`);
+        } catch (err) {
+          confirm.disabled = false;
+          say("err", String(err).replace(/^Error:\s*/, ""));
+        }
+      });
+      panel.append(
+        h("span", { class: "hint", text: `This edits ${p.settingsPath}. A dated backup is saved first, other hooks are left alone, and nothing is written until you press the button.` }),
+        h("pre", { class: "diff", text: p.diff || "(no change)" }),
+        h("div", { class: "row" }, confirm, cancel),
+      );
+    } catch (err) {
+      say("err", String(err).replace(/^Error:\s*/, ""));
+    }
+  }
+
+  toggleBtn.addEventListener("click", () => void preview(!installed));
+  void refresh();
+
+  return h(
+    "section",
+    {},
+    h("h2", {}, dot, h("span", { text: "AI agents: approvals" })),
+    state,
+    h("div", { class: "row" }, toggleBtn),
+    panel,
+    h("span", { class: "hint", text: "Adds two small hooks to Claude Code: permission requests, and its multiple-choice questions (shown on Today, answered in the terminal). Nothing is ever approved without your click." }),
+    rules,
+  );
+}
+
 // ── General section ───────────────────────────────────────────────────────────
 
 function generalSection(): HTMLElement {
@@ -675,6 +876,10 @@ function generalSection(): HTMLElement {
     h("div", { class: "row" },
       h("label", { text: "Island lives on" }),
       screen,
+    ),
+    h("div", { class: "row" },
+      h("label", { text: "Look" }),
+      select(settings.theme, [["dark", "Dark"], ["light", "Light"], ["auto", "Same as Windows"]], (v) => { settings.theme = v as Settings["theme"]; void save(); }),
     ),
     h("div", { class: "row" },
       h("label", { text: "Character" }),
@@ -895,28 +1100,73 @@ function keyboardSection(): HTMLElement {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
+/** The panel floats on its own, with no window chrome: a bar to drag it by and a button to put it away. */
+function wirePanel() {
+  const close = () => void getCurrentWindow().hide().catch(() => {});
+  document.getElementById("panel-close")?.addEventListener("click", close);
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLSelectElement)) close();
+  });
+}
+
 async function main() {
+  wirePanel();
   const boot = await Bridge.boot();
   if (boot) {
     settings = { ...settings, ...boot.settings };
     version = boot.version;
   }
   const hasFishKey = (await Bridge.secretPresent("fish-audio-api-key")) ?? false;
+  const google = (await Bridge.googleStatus()) ?? { configured: false, builtIn: false, connected: false };
 
-  clear(root);
-  root.append(
-    h("h1", {}, h("span", { text: "Kotoba" }), h("span", { class: "version", text: version })),
-    learningSection(),
-    remindersSection(),
-    voiceSection(hasFishKey),
-    aiSection(),
-    generalSection(),
-    keyboardSection(),
-    h("div", {
-      class: "hint",
-      text: "No telemetry. Network requests only go to the services you configure yourself.",
-    }),
-  );
+  // The version sits in the panel's bar, so the page itself starts with the first box.
+  const title = document.querySelector(".panel-title");
+  if (title) title.textContent = `Settings · ${version}`;
+
+  /** A section as Figma's "Box": its title above, its content in a softly filled box. */
+  const boxed = (section: HTMLElement): HTMLElement => {
+    // Boxed once: the same section is shown again whenever its page is revisited.
+    if (section.querySelector(":scope > .box")) return section;
+    const head = section.querySelector<HTMLElement>(":scope > h2");
+    const box = h("div", { class: "box" });
+    for (const child of Array.from(section.children)) if (child !== head) box.append(child);
+    section.append(box);
+    return section;
+  };
+
+  const pages: [string, HTMLElement[]][] = [
+    ["Learning", [learningSection(), remindersSection()]],
+    ["Voice & AI", [voiceSection(hasFishKey), aiSection()]],
+    ["Connections", [googleSection(google.configured, google.connected, google.builtIn)]],
+    ["Agents", [agentsSection()]],
+    [
+      "General",
+      [generalSection(), keyboardSection(), h("div", { class: "hint", text: "No telemetry. Network requests only go to the services you configure yourself." })],
+    ],
+  ];
+  const tabs = document.getElementById("settings-tabs");
+  const KEY = "kotoba.settings.page";
+  let current = 0;
+  try {
+    current = Math.max(0, Math.min(pages.length - 1, Number(localStorage.getItem(KEY)) || 0));
+  } catch {
+    /* the first page opens */
+  }
+  const buttons = pages.map(([name], i) => h("button", { class: "seg-tab", text: name, onclick: () => show(i) }));
+  const show = (i: number) => {
+    current = i;
+    try {
+      localStorage.setItem(KEY, String(i));
+    } catch {
+      /* remembered for this run only */
+    }
+    buttons.forEach((b, j) => b.classList.toggle("on", j === i));
+    clear(root);
+    for (const el of pages[i][1]) root.append(el.tagName === "SECTION" ? boxed(el) : el);
+    root.scrollTop = 0;
+  };
+  if (tabs) tabs.append(...buttons);
+  show(current);
 
   void onEvent<Settings>("settings-changed", (s) => {
     settings = { ...settings, ...s };
